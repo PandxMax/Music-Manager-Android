@@ -8,14 +8,14 @@ La versión para Windows está en [PandxMax/MusicManager](https://github.com/Pan
 
 ## Qué incluye
 - **Tu música en una lista**: eliges la carpeta de tu música (cambiable cuando quieras) y aparecen todas las canciones
-  con su formato y calidad (Hi-Res, Sin pérdida, Alta, Media, Baja). Buscar, ⟳ actualizar, selección múltiple y eliminar.
+  con su formato y calidad (Hi-Res, Sin pérdida, Alta, Media, Baja), o **en carpetas** como un árbol. Se actualiza sola. Buscar, selección múltiple y eliminar.
 - **Al tocar una canción** se abre la edición de datos y portada, con **▶ Reproducir** y **📊 Analizador de calidad** arriba.
 - **Reproductor** en segundo plano con notificación: cola, aleatorio, repetir, listas guardadas y mini-reproductor.
   Los colores de la app cambian según la portada de la canción.
 - **Editor de metadatos** (uno o varios archivos a la vez): Título, Intérprete, Álbum, Intérprete del álbum,
   Compositor, Género, Año, Pista, Número de disco, Comentario y Directorio; etiquetas técnicas (codec, tipo de etiqueta,
   bitrate, frecuencia, duración, modo, tamaño). Los MP3 se guardan en ID3v2.3 (lo que entiende Windows).
-- **Portadas**: elegir de la galería, **buscar automáticamente** (iTunes y Deezer, varias opciones), quitar, guardar como
+- **Portadas**: elegir de la galería, **buscar automáticamente** (iTunes, Deezer y SoundCloud, varias opciones), quitar, guardar como
   `cover.jpg`, ver en grande, y si no hay nada, abrir Google Imágenes.
 - **Letras** con LRCLIB (sincronizadas) y edición.
 - **IA** (Gemini gratis, Claude o ChatGPT con tu propia API key): rellenar metadatos y sugerir géneros.
@@ -23,11 +23,12 @@ La versión para Windows está en [PandxMax/MusicManager](https://github.com/Pan
 - **MusicBrainz** y **Discogs** (token) para rellenar etiquetas.
 - **Botones web**: YouTube, Spotify, Tidal, Qobuz y Wikipedia.
 - **Analizador de calidad** (espectrograma) de audio, con **comparación** de canciones de distintos lugares.
-- **Descargar de YouTube a MP3** (yt-dlp) y luego editar metadatos y portada.
+- **Descargar de YouTube o SoundCloud a MP3** (yt-dlp) y luego editar metadatos y portada.
+- **Ajustes de la canción**: ecualizador (graves/medios/agudos), volumen, normalizar, tempo, tono, velocidad, recorte, bucle,
+  al revés, eco, reverberación, ancho estéreo, mono, karaoke y fundidos; ajustes rápidos (Nightcore, Slowed + reverb…),
+  muestra de 30 s y guardar como canción nueva o reemplazar la original.
+- **Convertir formato** a MP3, M4A, FLAC, OPUS, OGG o WAV conservando etiquetas y portada.
 - Aviso «¿Desea guardar los cambios?» al salir, y botón 💾 para guardar.
-
-## Qué no incluye (todavía)
-- Convertir formato (en Android no hay un ffmpeg libre mantenido que se pueda incluir fácilmente).
 
 ## Cómo obtener el APK
 1. Pulsa el botón **Descargar APK** de arriba (o ve a **Releases**).
@@ -40,6 +41,12 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.04** — Se pasan a Android las novedades del programa de Windows (1.38–1.45): **Ajustes de la canción** (graves, medios,
+  agudos, volumen, normalizar, tempo, tono, velocidad, recorte, bucle, al revés, eco, reverberación, ancho estéreo, mono,
+  karaoke y fundidos, con muestra de 30 s y guardar como nueva o reemplazar); portadas y descargas de **SoundCloud**
+  (y aviso claro si pegas un enlace de Deezer); **Rellenar con IA** completa todos los campos usando primero el catálogo real
+  de iTunes/Deezer; iconos dibujados en vez de emojis; **logo del panda**; miniaturas en caché para listas instantáneas.
+  Además: **Convertir formato** (MP3, M4A, FLAC, OPUS, OGG, WAV) y «Ver en carpetas» como árbol (se entra a las subcarpetas).
 - **1.03** — Opción «Ver en carpetas» (muestra en qué carpeta está cada canción); la lista se guarda y se actualiza
   sola en segundo plano cuando cambias tu música (ya no hay que volver a analizar); ayuda paso a paso para conseguir
   una API key gratis de Gemini, con enlace directo y botón «Probar la key».

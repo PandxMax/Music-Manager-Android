@@ -262,14 +262,14 @@ fun YoutubeScreen() {
     var done by remember { mutableStateOf<List<File>>(emptyList()) }
 
     Column(Modifier.fillMaxSize()) {
-        Bar("Descargar de YouTube a MP3", { Nav.pop() })
+        Bar("Descargar de YouTube / SoundCloud", { Nav.pop() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(14.dp)) {
             Text(
                 "Descarga solo música o contenido que tengas derecho a guardar (tuyo, con licencia libre o con permiso). " +
                     "Eres responsable del uso que le des.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedTextField(
-                url, { url = it }, label = { Text("Enlace del vídeo") }, singleLine = true,
+                url, { url = it }, label = { Text("Enlace de YouTube o SoundCloud") }, placeholder = { Text("https://soundcloud.com/artista/cancion") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
             )
             TextButton(onClick = {
@@ -285,6 +285,11 @@ fun YoutubeScreen() {
                 enabled = !running && url.startsWith("http"), modifier = Modifier.padding(top = 12.dp),
                 onClick = {
                     val d = File(dest)
+                    if (url.contains("deezer.", ignoreCase = true)) {
+                        log = "Deezer no permite descargar canciones completas: están cifradas (DRM) y solo hay 30 s de muestra pública. " +
+                            "Busca la misma canción en YouTube o SoundCloud y pega ese enlace."
+                        return@Button
+                    }
                     if (!d.isDirectory) { log = "Esa carpeta de destino no existe."; return@Button }
                     running = true; progress = 0f; log = "Empezando… (la primera vez prepara los componentes, puede tardar)"; done = emptyList()
                     scope.launch {

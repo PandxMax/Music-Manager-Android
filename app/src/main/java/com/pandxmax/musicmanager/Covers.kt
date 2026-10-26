@@ -49,17 +49,48 @@ object Covers {
     }
 
     /** Miniatura de la portada de un archivo (incrustada o cover.jpg de su carpeta). Se llama fuera del hilo principal. */
+    private val diskDir by lazy { File(Store.app.cacheDir, "thumbs").apply { mkdirs() } }
+    private fun diskFile(key: String) = File(diskDir, Integer.toHexString(key.hashCode()) + "_" + key.length + ".jpg")
+    @Volatile private var trimmed = false
+
+    /** Borra las miniaturas más viejas si la caché pasa de ~60 MB (para no ocupar espacio). */
+    private fun trimDisk() {
+        if (trimmed) return
+        trimmed = true
+        try {
+            val fs = diskDir.listFiles() ?: return
+            var total = fs.sumOf { it.length() }
+            if (total < 60L * 1024 * 1024) return
+            for (f in fs.sortedBy { it.lastModified() }) { total -= f.length(); f.delete(); if (total < 40L * 1024 * 1024) break }
+        } catch (_: Throwable) {
+        }
+    }
+
     fun thumb(path: String, size: Int = 200): Bitmap? {
         val key = "$path|$size|${File(path).lastModified()}"
         cache.get(key)?.let { return it }
         if (missing.contains(key)) return null
+        // caché en disco: volver a abrir la app o la lista es casi instantáneo
+        val df = try { diskFile(key) } catch (_: Throwable) { null }
+        if (df != null && df.isFile) {
+            val b = try { BitmapFactory.decodeFile(df.absolutePath) } catch (_: Throwable) { null }
+            if (b != null) { cache.put(key, b); return b }
+        }
+        trimDisk()
         var bytes = embedded(path)
         if (bytes == null) {
             val fi = File(path).parentFile?.let { folderImage(it) }
             if (fi != null) bytes = try { fi.readBytes() } catch (_: Throwable) { null }
         }
-        val bmp = if (bytes != null) try { decode(bytes, size) } catch (_: Throwable) { null } else null
-        if (bmp != null) cache.put(key, bmp) else missing.add(key)
+        var bmp = if (bytes != null) try { decode(bytes, size) } catch (_: Throwable) { null } else null
+        if (bmp != null && (bmp.width > size * 2 || bmp.height > size * 2)) {
+            val k = size.toFloat() / maxOf(bmp.width, bmp.height)
+            bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt().coerceAtLeast(1), (bmp.height * k).toInt().coerceAtLeast(1), true)
+        }
+        if (bmp != null) {
+            cache.put(key, bmp)
+            if (df != null) try { df.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) } } catch (_: Throwable) {}
+        } else missing.add(key)
         return bmp
     }
 

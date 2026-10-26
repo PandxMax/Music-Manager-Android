@@ -292,7 +292,11 @@ fun LocationScreen() {
         Modifier.fillMaxSize().padding(28.dp),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("♪", fontSize = 60.sp, color = MaterialTheme.colorScheme.primary)
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(R.drawable.logo_panda), contentDescription = "Music Manager",
+            modifier = Modifier.size(110.dp)
+        )
+        Spacer(Modifier.height(8.dp))
         Text("Selecciona la ubicación de tu música", fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(10.dp))
         Text(
@@ -333,6 +337,7 @@ fun LibraryScreen() {
     var menu by remember { mutableStateOf(false) }
     var help by remember { mutableStateOf(false) }
     var askDelete by remember { mutableStateOf(false) }
+    var convertSel by remember { mutableStateOf<List<File>?>(null) }
     var msg by remember { mutableStateOf<String?>(null) }
 
     var openFolder by remember { mutableStateOf<String?>(null) }
@@ -347,16 +352,38 @@ fun LibraryScreen() {
     val matching = remember(songs, query) {
         if (query.isBlank()) songs else songs.filter { it.name.contains(query, ignoreCase = true) || (it.parentFile?.name ?: "").contains(query, ignoreCase = true) }
     }
-    // Carpetas que contienen música (en la vista por carpetas)
-    val folders = remember(matching) {
-        matching.groupBy { it.parent ?: "" }.entries.sortedBy { File(it.key).name.lowercase() }.map { it.key to it.value }
+    // Vista por carpetas como un árbol: se empieza en la raíz y se entra a las subcarpetas
+    val root = Store.musicDir.trimEnd('/')
+    val curDir = if (Store.folderView) (openFolder ?: root) else root
+    val tree = remember(matching, curDir, Store.folderView, query) {
+        // al buscar se muestran directamente las canciones que coinciden
+        if (!Store.folderView || query.isNotBlank()) null else {
+            val sub = LinkedHashMap<String, ArrayList<File>>()
+            val direct = ArrayList<File>()
+            val prefix = "$curDir/"
+            for (f in matching) {
+                val par = f.parent ?: continue
+                if (par == curDir) direct.add(f)
+                else if (par.startsWith(prefix)) {
+                    val child = prefix + par.substring(prefix.length).substringBefore('/')
+                    sub.getOrPut(child) { ArrayList() }.add(f)
+                }
+            }
+            sub.entries.sortedBy { File(it.key).name.lowercase() }.map { it.key to (it.value as List<File>) } to direct
+        }
     }
-    val inFolder = Store.folderView && openFolder != null
-    val shown = if (inFolder) matching.filter { it.parent == openFolder } else matching
+    val folders = tree?.first ?: emptyList()
+    val inFolder = Store.folderView && openFolder != null && openFolder != root
+    val shown = if (tree != null) tree.second else matching
+    fun goUp() {
+        val par = File(curDir).parent
+        openFolder = if (par == null || !par.startsWith(root) || par == root) null else par
+        selected = emptySet()
+    }
 
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
     BackHandler(enabled = selected.isEmpty() && searching) { searching = false; query = "" }
-    BackHandler(enabled = selected.isEmpty() && !searching && inFolder) { openFolder = null }
+    BackHandler(enabled = selected.isEmpty() && !searching && inFolder) { goUp() }
 
     Column(Modifier.fillMaxSize()) {
         when {
@@ -373,6 +400,7 @@ fun LibraryScreen() {
                     IconBtn("📊") {
                         Nav.push(Screen.Spectrum(sel.map { val f = File(it); SpecItem(Uri.fromFile(f), f.name, f.extension.lowercase() in LOSSLESS) }))
                     }
+                    IconBtn("🔄") { convertSel = sel.map { File(it) } }
                     IconBtn("🗑") { askDelete = true }
                     IconBtn("☑") { selected = shown.map { it.absolutePath }.toSet() }
                 }
@@ -390,7 +418,7 @@ fun LibraryScreen() {
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem(text = { Text("📂 Cambiar ubicación") }, onClick = { menu = false; Store.choosingDir = true })
                         DropdownMenuItem(text = { Text("📊 Analizador de calidad") }, onClick = { menu = false; Nav.push(Screen.Spectrum(emptyList())) })
-                        DropdownMenuItem(text = { Text("⬇ Descargar de YouTube a MP3") }, onClick = { menu = false; Nav.push(Screen.Youtube) })
+                        DropdownMenuItem(text = { Text("⬇ Descargar de YouTube / SoundCloud") }, onClick = { menu = false; Nav.push(Screen.Youtube) })
                         DropdownMenuItem(text = { Text("⚙ Ajustes") }, onClick = { menu = false; Nav.push(Screen.Settings) })
                         DropdownMenuItem(text = { Text("❔ Ayuda") }, onClick = { menu = false; help = true })
                     }
@@ -413,16 +441,20 @@ fun LibraryScreen() {
             Spacer(Modifier.weight(1f))
             Text(
                 if (Lib.scanning) "Buscando… ${Lib.found}"
-                else if (Store.folderView && !inFolder) "${folders.size} carpetas" else "${shown.size} canciones",
+                else if (Store.folderView) listOfNotNull(
+                    if (folders.isNotEmpty()) "${folders.size} carpetas" else null,
+                    if (shown.isNotEmpty() || folders.isEmpty()) "${shown.size} canciones" else null
+                ).joinToString(" · ")
+                else "${shown.size} canciones",
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         if (inFolder) {
             Row(
-                Modifier.fillMaxWidth().combinedClickable(onClick = { openFolder = null }).padding(horizontal = 8.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().combinedClickable(onClick = { goUp() }).padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconBtn("←") { openFolder = null }
+                IconBtn("←") { goUp() }
                 Column(Modifier.weight(1f)) {
                     Text("📁 " + File(openFolder!!).name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
@@ -441,13 +473,7 @@ fun LibraryScreen() {
         if (Lib.scanning) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (Store.folderView && !inFolder && folders.isNotEmpty()) {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
-                    items(folders, key = { it.first }) { (dirPath, list) ->
-                        FolderRow(dirPath, list) { openFolder = dirPath; selected = emptySet() }
-                    }
-                }
-            } else if (!Lib.scanning && shown.isEmpty()) {
+            if (!Lib.scanning && shown.isEmpty() && folders.isEmpty()) {
                 Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         if (query.isNotBlank()) "Ninguna canción coincide con «$query»." else "No encontré música en esta ubicación.",
@@ -457,6 +483,9 @@ fun LibraryScreen() {
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
+                    items(folders, key = { "dir:" + it.first }) { (dirPath, list) ->
+                        FolderRow(dirPath, list) { openFolder = dirPath; selected = emptySet() }
+                    }
                     items(shown, key = { it.absolutePath }) { f ->
                         val path = f.absolutePath
                         SongRow(
@@ -475,6 +504,8 @@ fun LibraryScreen() {
             }
         }
     }
+
+    convertSel?.let { fs -> ConvertDialog(fs) { convertSel = null; selected = emptySet() } }
 
     if (askDelete) {
         AlertDialog(
@@ -521,6 +552,11 @@ private fun relPath(dir: String): String {
     return if (r.isEmpty()) "(carpeta principal)" else r
 }
 
+private fun subInfo(dir: String, list: List<File>): String {
+    val subs = list.mapNotNull { f -> f.parent?.takeIf { it != dir }?.removePrefix("$dir/")?.substringBefore('/') }.toSet().size
+    return if (subs > 0) "  ·  $subs subcarpeta" + (if (subs > 1) "s" else "") else ""
+}
+
 @Composable
 private fun FolderRow(dirPath: String, list: List<File>, onClick: () -> Unit) {
     Row(
@@ -538,7 +574,7 @@ private fun FolderRow(dirPath: String, list: List<File>, onClick: () -> Unit) {
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(File(dirPath).name.ifEmpty { dirPath }, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "${list.size} canciones  ·  " + relPath(dirPath), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                "${list.size} canciones" + subInfo(dirPath, list), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

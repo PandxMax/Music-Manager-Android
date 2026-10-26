@@ -12,8 +12,8 @@ android {
         applicationId = "com.pandxmax.musicmanager"
         minSdk = 30
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.03"
+        versionCode = 5
+        versionName = "1.04"
         // Casi todos los teléfonos con Android 11+ son de 64 bits: el APK pesa mucho menos
         ndk { abiFilters += listOf("arm64-v8a") }
     }
@@ -73,6 +73,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.core:core-ktx:1.13.1")
 

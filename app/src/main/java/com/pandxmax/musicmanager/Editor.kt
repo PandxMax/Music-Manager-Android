@@ -72,6 +72,7 @@ fun EditorScreen(paths: List<String>) {
     var askBack by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var lyrBusy by remember { mutableStateOf(false) }
+    var showConvert by remember { mutableStateOf(false) }
 
     LaunchedEffect(files) {
         withContext(Dispatchers.IO) {
@@ -193,6 +194,19 @@ fun EditorScreen(paths: List<String>) {
                 ) { Text("📊  Analizador de calidad", maxLines = 1, fontSize = 13.sp) }
             }
         }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (files.size == 1) OutlinedButton(
+                onClick = { Nav.push(Screen.Fx(files[0].absolutePath)) },
+                modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
+            ) { Text("🎚  Ajustes de la canción", maxLines = 1, fontSize = 13.sp) }
+            OutlinedButton(
+                onClick = { showConvert = true },
+                modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
+            ) { Text("🔄  Convertir formato", maxLines = 1, fontSize = 13.sp) }
+        }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -297,6 +311,8 @@ fun EditorScreen(paths: List<String>) {
         }
     }
 
+    if (showConvert) ConvertDialog(files) { showConvert = false }
+
     if (askBack) {
         AlertDialog(
             onDismissRequest = { askBack = false },
@@ -348,7 +364,7 @@ private fun AiFillDialog(initTitle: String, initArtist: String, onApply: (Map<St
                 OutlinedTextField(a, { a = it }, label = { Text("Artista") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
                 Button(enabled = !loading && t.isNotBlank(), modifier = Modifier.padding(top = 8.dp), onClick = {
                     loading = true
-                    status = "Buscando con la IA…"
+                    status = "Buscando en iTunes/Deezer y con la IA…"
                     scope.launch {
                         try {
                             val r = withContext(Dispatchers.IO) { Ai.fillMetadata(t, a) }
@@ -427,19 +443,27 @@ private fun CoverSearchDialog(artist: String, title: String, onPick: (ByteArray)
     var items by remember { mutableStateOf<List<CoverCandidate>?>(null) }
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { items = withContext(Dispatchers.IO) { Covers.search(artist, title) } }
+    var scBusy by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        items = withContext(Dispatchers.IO) { Covers.search(artist, title) }
+        val sc = withContext(Dispatchers.IO) { try { Ytdl.soundcloudCovers(ctx, artist, title) } catch (_: Throwable) { emptyList() } }
+        items = (items ?: emptyList()) + sc
+        scBusy = false
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("✨ Portadas encontradas") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (items == null) Text("Buscando en iTunes y Deezer…")
+                else if (items!!.isEmpty() && scBusy) Text("Buscando también en SoundCloud…")
                 else if (items!!.isEmpty()) {
-                    Text("No encontré portadas en iTunes ni Deezer. Puedes buscarla en Google Imágenes, guardarla en el teléfono y elegirla con el botón 🖼.")
+                    Text("No encontré portadas en iTunes, Deezer ni SoundCloud. Puedes buscarla en Google Imágenes, guardarla en el teléfono y elegirla con el botón 🖼.")
                     Button(onClick = { openUrl(ctx, "https://www.google.com/search?tbm=isch&q=" + URLEncoder.encode("$artist $title portada", "UTF-8")) }, modifier = Modifier.padding(top = 8.dp)) {
                         Text("Abrir Google Imágenes")
                     }
                 } else {
+                    if (scBusy) Text("Buscando también en SoundCloud…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (busy) Text("Descargando…")
                     if (err.isNotEmpty()) Text(err, fontSize = 12.sp)
                     for (c in items!!) {

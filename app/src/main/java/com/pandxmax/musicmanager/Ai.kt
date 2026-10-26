@@ -58,21 +58,110 @@ object Ai {
         return if (a >= 0 && b > a) txt.substring(a, b + 1) else "{}"
     }
 
-    /** Rellena metadatos a partir del título y el artista. Devuelve solo los campos que la IA conoce. */
-    fun fillMetadata(title: String, artist: String): Map<String, String> {
-        val system = "Eres un asistente experto en metadatos musicales. Respondes SOLO con un objeto JSON válido, sin texto " +
-            "extra ni bloques de código. Si no estás seguro de un dato, déjalo como cadena vacía: nunca inventes."
-        val prompt = "Canción: «$title». Artista: «$artist».\n" +
-            "Devuelve el JSON con estas claves exactas: title (título oficial), artist, album (álbum del lanzamiento " +
-            "original), albumartist, composer, genre (género y subgénero principal, ej. «Rock alternativo»), " +
-            "date (año de lanzamiento, 4 dígitos), track (número de pista en el álbum), disc. Todos los valores son texto."
-        val o = JSONObject(jsonOf(ask(system, prompt)))
+    private fun norm(t: String?): String {
+        val a = (t ?: "").lowercase().replace(Regex("\\(.*?\\)|\\[.*?]|feat\\..*|ft\\..*"), " ")
+        return a.replace(Regex("[^0-9a-záéíóúñü]+"), " ").trim()
+    }
+
+    private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+
+    /** Datos reales del catálogo de iTunes (y Deezer de respaldo): álbum, año, pista, disco, género. */
+    fun catalog(title: String, artist: String): Map<String, String> {
+        val t = norm(title); val a = norm(artist)
         val out = LinkedHashMap<String, String>()
-        for ((id, _) in FIELDS) {
-            val v = o.optString(id, "").trim()
-            if (v.isNotEmpty() && v != "null") out[id] = v
+        try {
+            val d = JSONObject(Net.get("https://itunes.apple.com/search?entity=song&limit=25&term=" + enc("$artist $title".trim())))
+            val rs = d.optJSONArray("results") ?: JSONArray()
+            var best: JSONObject? = null; var bestSc = 0
+            val years = ArrayList<String>()
+            for (i in 0 until rs.length()) {
+                val r = rs.getJSONObject(i)
+                val rt = norm(r.optString("trackName")); val ra = norm(r.optString("artistName"))
+                var sc = if (rt == t) 3 else if (t.isNotEmpty() && (rt.contains(t) || t.contains(rt))) 2 else 0
+                sc += if (a.isNotEmpty()) (if (ra.contains(a) || a.contains(ra)) 3 else 0) else 1
+                val coll = r.optString("collectionName")
+                if (sc >= 3 && !coll.endsWith(" - Single") && !coll.endsWith(" - EP")) sc += 1
+                val rd = r.optString("releaseDate")
+                if (sc >= 4 && rd.length >= 4 && rd.substring(0, 4).all { it.isDigit() }) years.add(rd.substring(0, 4))
+                if (sc > bestSc) { best = r; bestSc = sc }
+            }
+            val b = best
+            if (b != null && bestSc >= 4) {
+                out["title"] = b.optString("trackName")
+                out["artist"] = b.optString("artistName")
+                out["album"] = b.optString("collectionName").replace(Regex(" - (Single|EP)$"), "")
+                out["albumartist"] = b.optString("collectionArtistName").ifEmpty { b.optString("artistName") }
+                out["genre"] = b.optString("primaryGenreName")
+                out["date"] = years.minOrNull() ?: b.optString("releaseDate").take(4)
+                if (b.optInt("trackNumber") > 0) out["track"] = b.optInt("trackNumber").toString()
+                if (b.optInt("discNumber") > 0) out["disc"] = b.optInt("discNumber").toString()
+            }
+        } catch (_: Throwable) {
         }
-        return out
+        if (out["album"].isNullOrEmpty()) {
+            try {
+                val q = if (artist.isNotBlank()) "artist:\"$artist\" track:\"$title\"" else title
+                val d = JSONObject(Net.get("https://api.deezer.com/search?limit=5&q=" + enc(q)))
+                val hit = d.optJSONArray("data")?.optJSONObject(0)
+                if (hit != null) {
+                    val tr = JSONObject(Net.get("https://api.deezer.com/track/" + hit.optLong("id")))
+                    val vals = mapOf(
+                        "title" to tr.optString("title"), "artist" to (tr.optJSONObject("artist")?.optString("name") ?: ""),
+                        "album" to (tr.optJSONObject("album")?.optString("title") ?: ""),
+                        "albumartist" to (tr.optJSONObject("artist")?.optString("name") ?: ""),
+                        "date" to tr.optString("release_date").take(4),
+                        "track" to (if (tr.optInt("track_position") > 0) tr.optInt("track_position").toString() else ""),
+                        "disc" to (if (tr.optInt("disk_number") > 0) tr.optInt("disk_number").toString() else "")
+                    )
+                    for ((k, v) in vals) if (v.isNotEmpty() && out[k].isNullOrEmpty()) out[k] = v
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return out.filterValues { it.isNotEmpty() }
+    }
+
+    /** Rellena TODOS los campos: primero el catálogo real (iTunes/Deezer) y la IA completa el resto. */
+    fun fillMetadata(title: String, artist: String): Map<String, String> {
+        val found = catalog(title, artist)
+        val system = "Eres un asistente experto en metadatos musicales. Respondes SOLO con un objeto JSON válido, sin texto " +
+            "extra ni bloques de código. Tu trabajo es RELLENAR TODOS LOS CAMPOS con los datos oficiales de la " +
+            "canción. Solo deja un campo vacío si ese dato de verdad no existe o no lo conoces en absoluto."
+        val known = if (found.isEmpty()) "ninguno" else JSONObject(found as Map<*, *>).toString()
+        val prompt = "Canción: «$title». Artista: «$artist».\n" +
+            "Datos ya comprobados en el catálogo de iTunes/Deezer (respétalos): $known\n\n" +
+            "Devuelve el JSON con TODAS estas claves (todos los valores como texto):\n" +
+            "- title: título oficial\n- artist: intérprete principal (con «feat.» si corresponde)\n" +
+            "- album: álbum original donde salió (si solo fue sencillo, el nombre del sencillo)\n" +
+            "- albumartist: intérprete del álbum (normalmente el mismo artista; «Varios artistas» si es recopilatorio)\n" +
+            "- composer: compositores/autores de la canción, separados por «; »\n" +
+            "- genre: género principal y, si aplica, subgénero (ej. «Reguetón», «Rock alternativo», «Pop latino»)\n" +
+            "- date: año de lanzamiento (4 dígitos)\n- track: número de pista en ese álbum (1 si es sencillo)\n" +
+            "- disc: número de disco (1 si el álbum tiene un solo disco)\n" +
+            "- comment: una nota breve y útil, por ejemplo «Sello: Sony Music · Productor: Tainy» (sin opiniones)"
+        val ai = LinkedHashMap<String, String>()
+        var err: Throwable? = null
+        try {
+            val o = JSONObject(jsonOf(ask(system, prompt)))
+            val alias = mapOf("tracknumber" to "track", "discnumber" to "disc", "year" to "date", "album_artist" to "albumartist", "comments" to "comment")
+            for (k0 in o.keys()) {
+                val k = alias[k0] ?: k0
+                val v = o.optString(k0, "").trim()
+                if (FIELDS.any { it.first == k } && v.isNotEmpty() && v != "null" && v.lowercase() !in setOf("desconocido", "unknown", "n/a")) ai[k] = v
+            }
+        } catch (e: Throwable) {
+            err = e
+        }
+        val data = LinkedHashMap(ai)
+        for (k in listOf("title", "artist", "album", "albumartist", "date", "track", "disc")) found[k]?.let { data[k] = it }
+        if (data["genre"].isNullOrEmpty()) found["genre"]?.let { data["genre"] = it }
+        if (!data["artist"].isNullOrEmpty() && data["albumartist"].isNullOrEmpty()) data["albumartist"] = data["artist"]!!
+        if (!data["album"].isNullOrEmpty() && data["disc"].isNullOrEmpty()) data["disc"] = "1"
+        data["date"]?.let { d -> Regex("\\d{4}").find(d)?.let { data["date"] = it.value } }
+        for (k in listOf("track", "disc")) data[k]?.let { v -> data[k] = Regex("\\d+").find(v)?.value ?: "" }
+        val res = data.filterValues { it.isNotEmpty() }
+        if (res.isEmpty() && err != null) throw err
+        return res
     }
 
     /** Sugiere géneros y subgéneros para la canción. */

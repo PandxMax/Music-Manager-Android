@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -27,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,6 +64,18 @@ fun MMTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
+/** Iconos dibujados (siguen el tema y el color) en lugar de emojis, como en el programa de Windows. */
+private val ICONS: Map<String, ImageVector> = mapOf(
+    "←" to Icons.AutoMirrored.Filled.ArrowBack, "⋮" to Icons.Filled.MoreVert, "✕" to Icons.Filled.Close,
+    "▶" to Icons.Filled.PlayArrow, "⏸" to Icons.Filled.Pause, "⏹" to Icons.Filled.Stop,
+    "⏮" to Icons.Filled.SkipPrevious, "⏭" to Icons.Filled.SkipNext, "🔀" to Icons.Filled.Shuffle,
+    "🔁" to Icons.Filled.Repeat, "🔂" to Icons.Filled.RepeatOne, "☑" to Icons.Filled.SelectAll,
+    "✏" to Icons.Filled.Edit, "✨" to Icons.Filled.AutoAwesome, "➕" to Icons.Filled.Add,
+    "💾" to Icons.Filled.Save, "📊" to Icons.Filled.GraphicEq, "📚" to Icons.AutoMirrored.Filled.QueueMusic,
+    "🔄" to Icons.Filled.SwapHoriz, "🔍" to Icons.Filled.Search, "🖼" to Icons.Filled.Image,
+    "🗑" to Icons.Filled.Delete,
+)
+
 @Composable
 fun IconBtn(text: String, enabled: Boolean = true, accent: Boolean = false, onClick: () -> Unit) {
     val bg = if (accent && enabled) MaterialTheme.colorScheme.primary else Color.Transparent
@@ -66,7 +84,11 @@ fun IconBtn(text: String, enabled: Boolean = true, accent: Boolean = false, onCl
     Box(
         Modifier.size(42.dp).clip(CircleShape).background(bg).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
-    ) { Text(text, fontSize = 20.sp, color = fg) }
+    ) {
+        val ic = ICONS[text]
+        if (ic != null) Icon(ic, contentDescription = null, tint = fg, modifier = Modifier.size(22.dp))
+        else Text(text, fontSize = 20.sp, color = fg)
+    }
 }
 
 @Composable

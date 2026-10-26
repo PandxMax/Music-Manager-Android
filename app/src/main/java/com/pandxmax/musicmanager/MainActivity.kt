@@ -34,6 +34,7 @@ sealed class Screen {
     object Player : Screen()
     class Spectrum(val items: List<SpecItem>) : Screen()
     object Youtube : Screen()
+    class Fx(val path: String) : Screen()
     object Settings : Screen()
 }
 
@@ -88,6 +89,7 @@ fun Root() {
                         is Screen.Player -> PlayerScreen()
                         is Screen.Spectrum -> SpectrumScreen(top.items)
                         is Screen.Youtube -> YoutubeScreen()
+                        is Screen.Fx -> FxScreen(top.path)
                         is Screen.Settings -> SettingsScreen()
                     }
                 }
@@ -104,7 +106,11 @@ fun PermissionScreen() {
         Modifier.fillMaxSize().padding(28.dp),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("♪", fontSize = 56.sp, color = MaterialTheme.colorScheme.primary)
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(R.drawable.logo_panda), contentDescription = "Music Manager",
+            modifier = Modifier.size(110.dp)
+        )
+        Spacer(Modifier.height(8.dp))
         Text("Music Manager", fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Text(
