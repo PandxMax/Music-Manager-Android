@@ -75,18 +75,21 @@ fun EditorScreen(paths: List<String>) {
 
     LaunchedEffect(files) {
         withContext(Dispatchers.IO) {
-            val reads = files.map { Tags.read(it) }
-            for ((id, _) in FIELDS) {
-                val vs = reads.map { it[id] ?: "" }.toSet()
-                values[id] = if (vs.size == 1) vs.first() else ""
-                multi[id] = vs.size > 1
-            }
-            if (files.size == 1) {
-                tech = Tags.tech(files[0])
-                lyrics = Tags.lyrics(files[0])
-            }
             val p = files[0].absolutePath
             coverBytes = Covers.embedded(p) ?: files[0].parentFile?.let { Covers.folderImage(it) }?.readBytes()
+            if (files.size == 1) {
+                val (v, t, l) = Tags.readAll(files[0])
+                for ((id, _) in FIELDS) { values[id] = v[id] ?: ""; multi[id] = false }
+                tech = t
+                lyrics = l
+            } else {
+                val reads = files.map { Tags.read(it) }
+                for ((id, _) in FIELDS) {
+                    val vs = reads.map { it[id] ?: "" }.toSet()
+                    values[id] = if (vs.size == 1) vs.first() else ""
+                    multi[id] = vs.size > 1
+                }
+            }
         }
     }
 
@@ -165,6 +168,30 @@ fun EditorScreen(paths: List<String>) {
     Column(Modifier.fillMaxSize()) {
         Bar(title, { if (dirty) askBack = true else Nav.pop() }) {
             IconBtn("💾", enabled = dirty && !busy, accent = true) { save() }
+        }
+        Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val paths0 = files.map { it.absolutePath }
+                val isThis = PlayerManager.currentPath != null && PlayerManager.currentPath in paths0
+                Button(
+                    onClick = {
+                        if (files.size == 1) PlayerManager.playOrToggle(paths0[0], Lib.songs.map { it.absolutePath })
+                        else if (isThis) PlayerManager.toggle() else PlayerManager.playList(paths0, 0)
+                    },
+                    modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
+                ) { Text(if (isThis && PlayerManager.isPlaying) "⏸  Pausar" else "▶  Reproducir", maxLines = 1) }
+                OutlinedButton(
+                    onClick = {
+                        Nav.push(Screen.Spectrum(files.map {
+                            SpecItem(Uri.fromFile(it), it.name, it.extension.lowercase() in setOf("flac", "wav", "aiff", "aif"))
+                        }))
+                    },
+                    modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
+                ) { Text("📊  Analizador de calidad", maxLines = 1, fontSize = 13.sp) }
+            }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {

@@ -60,14 +60,16 @@ fun Root() {
     var hasAccess by remember { mutableStateOf(Environment.isExternalStorageManager()) }
     LaunchedEffect(Unit) {
         while (true) {
-            hasAccess = Environment.isExternalStorageManager()
-            PlayerManager.tick()
-            delay(400)
+            if (!hasAccess) hasAccess = Environment.isExternalStorageManager()
+            if (PlayerManager.isPlaying) PlayerManager.tick()
+            delay(if (hasAccess) 500 else 700)
         }
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         if (!hasAccess) {
             PermissionScreen()
+        } else if (Store.musicDir.isEmpty() || Store.choosingDir) {
+            Box(Modifier.fillMaxSize().systemBarsPadding()) { LocationScreen() }
         } else {
             val top = Nav.stack.last()
             BackHandler(enabled = Nav.stack.size > 1) { Nav.pop() }

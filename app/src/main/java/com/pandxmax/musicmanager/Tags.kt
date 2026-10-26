@@ -58,6 +58,24 @@ object Tags {
         return out
     }
 
+    /** Una sola lectura del archivo: etiquetas, datos técnicos y letra. */
+    fun readAll(f: File): Triple<Map<String, String>, Tech, String> {
+        val out = FIELDS.associate { it.first to "" }.toMutableMap()
+        var lyr = ""
+        val tech = try {
+            val af = AudioFileIO.read(f)
+            val tag = af.tag
+            if (tag != null) {
+                for ((id, key) in KEYS) out[id] = try { tag.getFirst(key) ?: "" } catch (_: Exception) { "" }
+                lyr = try { tag.getFirst(FieldKey.LYRICS) ?: "" } catch (_: Exception) { "" }
+            }
+            techOf(f, af)
+        } catch (_: Throwable) {
+            Tech(size = "%.2f MB".format(f.length() / 1048576.0))
+        }
+        return Triple(out, tech, lyr)
+    }
+
     fun lyrics(f: File): String {
         return try {
             AudioFileIO.read(f).tag?.getFirst(FieldKey.LYRICS) ?: ""
@@ -66,11 +84,12 @@ object Tags {
         }
     }
 
-    fun tech(f: File): Tech {
+    fun tech(f: File): Tech = try { techOf(f, AudioFileIO.read(f)) } catch (_: Throwable) { Tech(size = "%.2f MB".format(f.length() / 1048576.0)) }
+
+    private fun techOf(f: File, af: org.jaudiotagger.audio.AudioFile): Tech {
         var codec = "—"; var enc = "—"; var tagName = "—"; var br = "—"; var freq = "—"; var dur = "—"; var mode = "—"
         val size = "%.2f MB".format(f.length() / 1048576.0)
         try {
-            val af = AudioFileIO.read(f)
             val h = af.audioHeader
             codec = when (f.extension.lowercase()) {
                 "mp3" -> "MP3"; "flac" -> "FLAC"; "m4a", "mp4" -> "AAC"; "ogg", "oga" -> "Vorbis"

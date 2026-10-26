@@ -12,13 +12,28 @@ android {
         applicationId = "com.pandxmax.musicmanager"
         minSdk = 30
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.01"
+        versionCode = 3
+        versionName = "1.02"
+        // Casi todos los teléfonos con Android 11+ son de 64 bits: el APK pesa mucho menos
+        ndk { abiFilters += listOf("arm64-v8a") }
+    }
+
+    signingConfigs {
+        // Clave fija de pruebas (pública a propósito): así cada APK nuevo se instala encima del anterior.
+        // La de Google Play será otra, privada.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
         }
     }

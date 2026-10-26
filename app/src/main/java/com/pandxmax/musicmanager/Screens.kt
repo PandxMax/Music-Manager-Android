@@ -179,7 +179,7 @@ fun SpectrumScreen(initial: List<SpecItem>) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        Bar("Espectrograma y calidad", { Nav.pop() }) {
+        Bar("Analizador de calidad", { Nav.pop() }) {
             IconBtn("➕") { picker.launch(arrayOf("audio/*")) }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(12.dp)) {
@@ -254,7 +254,7 @@ fun YoutubeScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var url by remember { mutableStateOf("") }
-    var dest by remember { mutableStateOf(Store.lastDir.ifBlank { Store.musicRoot().absolutePath }) }
+    var dest by remember { mutableStateOf(Store.musicDir.ifBlank { Store.musicRoot().absolutePath }) }
     var kbps by remember { mutableIntStateOf(320) }
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }

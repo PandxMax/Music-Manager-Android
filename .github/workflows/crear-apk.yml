@@ -19,9 +19,9 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Compilar APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleRelease --no-daemon --stacktrace
       - name: Preparar APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk MusicManager-Android.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MusicManager-Android.apk
       - uses: actions/upload-artifact@v4
         with:
           name: MusicManager-Android

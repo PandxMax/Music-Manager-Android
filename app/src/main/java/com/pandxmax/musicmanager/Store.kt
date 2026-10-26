@@ -23,7 +23,9 @@ object Store {
     var provider by mutableStateOf("Claude")
     var discogsToken by mutableStateOf("")
     var lastDir by mutableStateOf("")
-    var gridView by mutableStateOf(true)
+    /** Carpeta elegida por el usuario donde está su música ("" = aún no elegida). */
+    var musicDir by mutableStateOf("")
+    var choosingDir by mutableStateOf(false)
     var coverMax by mutableStateOf(1200)
 
     var coverVersion by mutableIntStateOf(0)
@@ -41,7 +43,7 @@ object Store {
         provider = prefs.getString("provider", "Claude") ?: "Claude"
         discogsToken = prefs.getString("discogs", "") ?: ""
         lastDir = prefs.getString("lastDir", "") ?: ""
-        gridView = prefs.getBoolean("gridView", true)
+        musicDir = prefs.getString("musicDir", "") ?: ""
         coverMax = prefs.getInt("coverMax", 1200)
     }
 
@@ -49,7 +51,7 @@ object Store {
         prefs.edit()
             .putBoolean("dark", dark).putInt("accent", accent).putBoolean("coverTint", coverTint)
             .putString("provider", provider).putString("discogs", discogsToken)
-            .putString("lastDir", lastDir).putBoolean("gridView", gridView).putInt("coverMax", coverMax)
+            .putString("lastDir", lastDir).putString("musicDir", musicDir).putInt("coverMax", coverMax)
             .apply()
     }
 

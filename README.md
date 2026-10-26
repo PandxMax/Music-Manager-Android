@@ -7,8 +7,9 @@ Versión para Android de Music Manager (Kotlin + Jetpack Compose). Creada por **
 La versión para Windows está en [PandxMax/MusicManager](https://github.com/PandxMax/MusicManager).
 
 ## Qué incluye
-- **Explorador de carpetas** (rejilla o lista), buscar, incluir subcarpetas, ⟳ actualizar, nueva carpeta, renombrar,
-  cortar / copiar / pegar (para mover), eliminar.
+- **Tu música en una lista**: eliges la carpeta de tu música (cambiable cuando quieras) y aparecen todas las canciones
+  con su formato y calidad (Hi-Res, Sin pérdida, Alta, Media, Baja). Buscar, ⟳ actualizar, selección múltiple y eliminar.
+- **Al tocar una canción** se abre la edición de datos y portada, con **▶ Reproducir** y **📊 Analizador de calidad** arriba.
 - **Reproductor** en segundo plano con notificación: cola, aleatorio, repetir, listas guardadas y mini-reproductor.
   Los colores de la app cambian según la portada de la canción.
 - **Editor de metadatos** (uno o varios archivos a la vez): Título, Intérprete, Álbum, Intérprete del álbum,
@@ -20,13 +21,12 @@ La versión para Windows está en [PandxMax/MusicManager](https://github.com/Pan
 - **IA** (Claude, ChatGPT o Gemini con tu propia API key): rellenar metadatos y sugerir géneros.
 - **MusicBrainz** y **Discogs** (token) para rellenar etiquetas.
 - **Botones web**: YouTube, Spotify, Tidal, Qobuz y Wikipedia.
-- **Espectrograma y calidad** de audio, con **comparación** de canciones de distintos lugares.
+- **Analizador de calidad** (espectrograma) de audio, con **comparación** de canciones de distintos lugares.
 - **Descargar de YouTube a MP3** (yt-dlp) y luego editar metadatos y portada.
 - Aviso «¿Desea guardar los cambios?» al salir, y botón 💾 para guardar.
 
 ## Qué no incluye (todavía)
 - Convertir formato (en Android no hay un ffmpeg libre mantenido que se pueda incluir fácilmente).
-- Arrastrar y soltar: se usa cortar/copiar y «Pegar aquí».
 
 ## Cómo obtener el APK
 1. Pulsa el botón **Descargar APK** de arriba (o ve a **Releases**).
@@ -39,5 +39,8 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.02** — Al abrir se elige la ubicación de la música (se puede cambiar cuando quieras); lista de canciones con formato y calidad;
+  tocar una canción abre la edición de datos y portada, con ▶ Reproducir y 📊 Analizador de calidad arriba; reproducción
+  inmediata y app mucho más rápida (versión optimizada y APK más ligero).
 - **1.01** — La app pasa a su propio repositorio (Music-Manager-Android); busca actualizaciones aquí.
 - **1.0** — Primera versión.

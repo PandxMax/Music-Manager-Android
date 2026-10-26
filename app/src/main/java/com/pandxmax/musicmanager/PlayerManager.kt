@@ -24,6 +24,8 @@ import java.io.File
 
 object PlayerManager {
     private var controller: MediaController? = null
+    /** Lo que el usuario pidió antes de que el reproductor estuviera listo. */
+    private var pending: ((MediaController) -> Unit)? = null
     private val scope = CoroutineScope(Dispatchers.Main)
 
     var isPlaying by mutableStateOf(false)
@@ -57,6 +59,12 @@ object PlayerManager {
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) { sync() }
         })
         sync()
+        pending?.let { pending = null; it(c) }
+    }
+
+    private fun withController(block: (MediaController) -> Unit) {
+        val c = controller
+        if (c != null) block(c) else pending = block
     }
 
     private fun sync() {
@@ -91,13 +99,6 @@ object PlayerManager {
         }
     }
 
-    private fun thumbBytes(path: String): ByteArray? {
-        val bmp: Bitmap = Covers.thumb(path, 256) ?: return null
-        val bo = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, 85, bo)
-        return bo.toByteArray()
-    }
-
     private fun item(path: String): MediaItem {
         val f = File(path)
         val base = f.nameWithoutExtension
@@ -105,26 +106,41 @@ object PlayerManager {
         val md = MediaMetadata.Builder()
             .setTitle(if (parts.size == 2) parts[1] else base)
             .setArtist(if (parts.size == 2) parts[0] else null)
-        thumbBytes(path)?.let { md.setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER) }
+        // La portada no se decodifica aquí (era lo que hacía lenta la reproducción):
+        // el reproductor la lee del propio archivo al empezar a sonar.
         return MediaItem.Builder().setMediaId(path).setUri(Uri.fromFile(f)).setMediaMetadata(md.build()).build()
     }
 
     fun playList(paths: List<String>, index: Int = 0) {
         if (paths.isEmpty()) return
-        scope.launch {
-            val items = withContext(Dispatchers.IO) { paths.map { item(it) } }
-            val c = controller ?: return@launch
-            c.setMediaItems(items, index.coerceIn(0, items.size - 1), 0L)
+        val i = index.coerceIn(0, paths.size - 1)
+        currentPath = paths[i]
+        withController { c ->
+            // Primero suena la canción elegida; el resto de la cola se añade después.
+            c.setMediaItem(item(paths[i]))
             c.prepare()
             c.play()
+            if (paths.size > 1) scope.launch {
+                val before = withContext(Dispatchers.Default) { paths.subList(0, i).map { item(it) } }
+                val after = withContext(Dispatchers.Default) { paths.subList(i + 1, paths.size).map { item(it) } }
+                if (c.currentMediaItem?.mediaId != paths[i]) return@launch
+                if (after.isNotEmpty()) c.addMediaItems(after)
+                if (before.isNotEmpty()) c.addMediaItems(0, before)
+            }
         }
+    }
+
+    /** Reproduce (o pausa si ya suena) esta canción, con el resto de la biblioteca como cola. */
+    fun playOrToggle(path: String, library: List<String>) {
+        if (currentPath == path && controller?.currentMediaItem?.mediaId == path) { toggle(); return }
+        val idx = library.indexOf(path)
+        if (idx >= 0) playList(library, idx) else playList(listOf(path), 0)
     }
 
     fun enqueue(paths: List<String>) {
         if (paths.isEmpty()) return
-        scope.launch {
-            val items = withContext(Dispatchers.IO) { paths.map { item(it) } }
-            val c = controller ?: return@launch
+        withController { c ->
+            val items = paths.map { item(it) }
             val wasEmpty = c.mediaItemCount == 0
             c.addMediaItems(items)
             if (wasEmpty) { c.prepare(); c.play() }

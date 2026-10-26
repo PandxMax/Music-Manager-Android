@@ -1,17 +1,19 @@
 package com.pandxmax.musicmanager
 
-import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,7 +22,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,312 +32,361 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
-private fun listDir(dir: File, sub: Boolean): List<File> {
-    return try {
-        if (sub) {
-            dir.walkTopDown().filter { it.isFile && it.extension.lowercase() in AUDIO_EXT && !it.name.startsWith(".") }
-                .sortedBy { it.name.lowercase() }.toList()
-        } else {
-            val all = dir.listFiles()?.filter { !it.name.startsWith(".") } ?: emptyList()
-            all.filter { it.isDirectory }.sortedBy { it.name.lowercase() } +
-                all.filter { it.isFile && it.extension.lowercase() in AUDIO_EXT }.sortedBy { it.name.lowercase() }
-        }
-    } catch (_: Exception) {
-        emptyList()
-    }
+// ------------------------------------------------------------------ Calidad de cada archivo
+
+/** level: 0 Hi-Res, 1 Sin pérdida, 2 Alta, 3 Media, 4 Baja, 5 desconocida */
+data class Quality(val format: String, val detail: String, val level: Int)
+
+private val LOSSLESS = setOf("flac", "wav", "aiff", "aif", "alac")
+
+fun qualityLabel(l: Int) = when (l) { 0 -> "Hi-Res"; 1 -> "Sin pérdida"; 2 -> "Alta"; 3 -> "Media"; 4 -> "Baja"; else -> "—" }
+fun qualityColor(l: Int) = when (l) {
+    0 -> Color(0xFFB388FF); 1 -> Color(0xFF2ECC71); 2 -> Color(0xFF4FC3F7); 3 -> Color(0xFFF39C12); 4 -> Color(0xFFE74C3C)
+    else -> Color(0xFF8A8A9A)
 }
 
-private fun uniqueTarget(dir: File, name: String): File {
-    var t = File(dir, name)
-    if (!t.exists()) return t
-    val base = t.nameWithoutExtension
-    val ext = if (t.isFile && t.extension.isNotEmpty()) "." + t.extension else ""
-    var n = 2
-    while (true) {
-        t = File(dir, if (t.isDirectory) "$name ($n)" else "$base ($n)$ext")
-        if (!t.exists()) return t
-        n++
-    }
-}
+object QualityCache {
+    private val mem = ConcurrentHashMap<String, Quality>()
 
-private fun moveOrCopy(paths: List<String>, target: File, cut: Boolean): Pair<Int, List<String>> {
-    var ok = 0
-    val errs = ArrayList<String>()
-    for (p in paths) {
-        val src = File(p)
-        if (!src.exists()) continue
-        if (src.isDirectory && (target.absolutePath == src.absolutePath || target.absolutePath.startsWith(src.absolutePath + "/"))) {
-            errs.add("No puedes meter «${src.name}» dentro de sí misma"); continue
-        }
-        if (cut && src.parentFile?.absolutePath == target.absolutePath) continue
-        val dst = uniqueTarget(target, src.name)
+    private fun key(f: File) = "${f.absolutePath}|${f.lastModified()}|${f.length()}"
+
+    fun peek(f: File): Quality? = mem[key(f)]
+
+    /** Lee solo la cabecera del archivo (rápido). Llamar fuera del hilo principal. */
+    fun get(f: File): Quality {
+        val k = key(f)
+        mem[k]?.let { return it }
+        val ext = f.extension.lowercase()
+        val fmt = when (ext) { "m4a", "mp4" -> "M4A"; "oga" -> "OGG"; else -> ext.uppercase() }
+        var kbps = 0; var sr = 0; var bits = 0; var ms = 0L
+        val r = MediaMetadataRetriever()
         try {
-            if (cut) {
-                if (!src.renameTo(dst)) {
-                    src.copyRecursively(dst, overwrite = false)
-                    src.deleteRecursively()
-                }
-            } else {
-                src.copyRecursively(dst, overwrite = false)
+            r.setDataSource(f.absolutePath)
+            kbps = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0) / 1000
+            ms = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            if (Build.VERSION.SDK_INT >= 31) {
+                sr = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)?.toIntOrNull() ?: 0
+                bits = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITS_PER_SAMPLE)?.toIntOrNull() ?: 0
             }
-            ok++
-        } catch (e: Exception) {
-            errs.add("${src.name}: ${e.message}")
+        } catch (_: Throwable) {
+        } finally {
+            try { r.release() } catch (_: Throwable) {}
         }
+        if (kbps <= 0 && ms > 0) kbps = (f.length() * 8 / ms).toInt()
+        val lossless = ext in LOSSLESS
+        val parts = ArrayList<String>()
+        if (lossless && bits > 0) parts.add("$bits bit")
+        if (sr > 0) parts.add((if (sr % 1000 == 0) "${sr / 1000}" else "%.1f".format(sr / 1000.0)) + " kHz")
+        if (kbps > 0) parts.add("$kbps kbps")
+        val level = when {
+            lossless && (bits > 16 || sr > 48000) -> 0
+            lossless -> 1
+            kbps >= 256 -> 2
+            kbps >= 160 -> 3
+            kbps > 0 -> 4
+            else -> 5
+        }
+        val q = Quality(fmt, parts.joinToString(" · "), level)
+        mem[k] = q
+        return q
     }
-    return ok to errs
 }
 
-private sealed class LibDlg {
-    object NewFolder : LibDlg()
-    class Rename(val file: File) : LibDlg()
-    class Delete(val paths: List<String>) : LibDlg()
-    object Help : LibDlg()
+// ------------------------------------------------------------------ Biblioteca (canciones de la carpeta elegida)
+
+object Lib {
+    var songs by mutableStateOf<List<File>>(emptyList())
+    var scanning by mutableStateOf(false)
+    var found by mutableIntStateOf(0)
+    var scannedDir = ""
+
+    suspend fun scan(dirPath: String) {
+        if (dirPath.isEmpty()) return
+        scanning = true
+        found = 0
+        val list = withContext(Dispatchers.IO) {
+            val root = File(dirPath)
+            val androidDir = File(Environment.getExternalStorageDirectory(), "Android").absolutePath
+            val out = ArrayList<File>()
+            try {
+                root.walkTopDown()
+                    .onEnter { !it.name.startsWith(".") && it.absolutePath != androidDir }
+                    .forEach { f ->
+                        if (f.isFile && f.extension.lowercase() in AUDIO_EXT && !f.name.startsWith(".")) {
+                            out.add(f)
+                            if (out.size % 50 == 0) found = out.size
+                        }
+                    }
+            } catch (_: Throwable) {
+            }
+            out.sortBy { it.nameWithoutExtension.lowercase() }
+            out
+        }
+        songs = list
+        found = list.size
+        scannedDir = dirPath
+        scanning = false
+    }
 }
+
+/** Convierte la carpeta elegida en el selector del sistema a una ruta normal. */
+private fun treeToPath(uri: Uri): String? {
+    return try {
+        val id = DocumentsContract.getTreeDocumentId(uri)
+        val parts = id.split(":", limit = 2)
+        val vol = parts[0]
+        val rel = if (parts.size > 1) parts[1] else ""
+        val base = if (vol.equals("primary", true)) Environment.getExternalStorageDirectory().absolutePath else "/storage/$vol"
+        if (rel.isEmpty()) base else "$base/$rel"
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+// ------------------------------------------------------------------ Pantalla: elegir ubicación
+
+@Composable
+fun LocationScreen() {
+    var err by remember { mutableStateOf<String?>(null) }
+    fun choose(path: String) {
+        val f = File(path)
+        if (!f.isDirectory) { err = "No se puede abrir esa carpeta"; return }
+        Store.musicDir = f.absolutePath
+        Store.choosingDir = false
+        Store.save()
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) treeToPath(uri)?.let { choose(it) } ?: run { err = "No se pudo usar esa carpeta" }
+    }
+    val canCancel = Store.musicDir.isNotEmpty()
+    BackHandler(enabled = canCancel) { Store.choosingDir = false }
+
+    Column(
+        Modifier.fillMaxSize().padding(28.dp),
+        verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("♪", fontSize = 60.sp, color = MaterialTheme.colorScheme.primary)
+        Text("Selecciona la ubicación de tu música", fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Elige la carpeta donde guardas tus canciones. Buscaré la música dentro de ella y de sus subcarpetas.\n" +
+                "Podrás cambiarla cuando quieras.",
+            textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = { picker.launch(null) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+            Text("📂  Elegir carpeta", fontSize = 16.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(onClick = { choose(Store.musicRoot().absolutePath) }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+            Text("🎵  Usar la carpeta «Music» del teléfono")
+        }
+        Spacer(Modifier.height(6.dp))
+        TextButton(onClick = { choose(Environment.getExternalStorageDirectory().absolutePath) }) {
+            Text("Buscar en todo el teléfono")
+        }
+        if (canCancel) {
+            Spacer(Modifier.height(6.dp))
+            Text("Ahora: ${Store.musicDir}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            TextButton(onClick = { Store.choosingDir = false }) { Text("Cancelar") }
+        }
+        err?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+    }
+}
+
+// ------------------------------------------------------------------ Pantalla principal: lista de canciones
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen() {
-    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val root = Store.storageRoot()
-    var dir by remember {
-        mutableStateOf(File(Store.lastDir).takeIf { Store.lastDir.isNotEmpty() && it.isDirectory } ?: Store.musicRoot())
-    }
-    var entries by remember { mutableStateOf<List<File>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var menu by remember { mutableStateOf(false) }
-    var moreMenu by remember { mutableStateOf(false) }
-    var tick by remember { mutableIntStateOf(0) }
-    var sub by remember { mutableStateOf(false) }
-    var dlg by remember { mutableStateOf<LibDlg?>(null) }
+    var help by remember { mutableStateOf(false) }
+    var askDelete by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(dir, tick, sub, Store.libVersion) {
-        Store.lastDir = dir.absolutePath
-        Store.save()
-        entries = withContext(Dispatchers.IO) { listDir(dir, sub) }
-        selected = selected.filter { p -> entries.any { it.absolutePath == p } }.toSet()
+    LaunchedEffect(Store.musicDir) {
+        if (Lib.scannedDir != Store.musicDir) Lib.scan(Store.musicDir)
     }
 
-    val shown = entries.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
-    val songs = shown.filter { it.isFile }
-
-    fun refresh() { Covers.forget(""); Store.coverVersion++; tick++ }
-    fun up() {
-        val p = dir.parentFile
-        if (p != null && dir.absolutePath != root.absolutePath) { dir = p; selected = emptySet() }
+    val songs = Lib.songs
+    val shown = remember(songs, query) {
+        if (query.isBlank()) songs else songs.filter { it.name.contains(query, ignoreCase = true) }
     }
 
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
     BackHandler(enabled = selected.isEmpty() && searching) { searching = false; query = "" }
-    BackHandler(enabled = selected.isEmpty() && !searching && dir.absolutePath != root.absolutePath) { up() }
-
-    fun runOp(block: () -> String) {
-        scope.launch {
-            val m = withContext(Dispatchers.IO) { block() }
-            msg = m
-            refresh()
-        }
-    }
 
     Column(Modifier.fillMaxSize()) {
-        if (selected.isNotEmpty()) {
-            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+        when {
+            selected.isNotEmpty() -> Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
                 Row(
                     Modifier.fillMaxWidth().height(56.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconBtn("✕") { selected = emptySet() }
-                    Text("${selected.size}", Modifier.padding(horizontal = 6.dp), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    val files = selected.filter { File(it).isFile }
-                    IconBtn("▶", enabled = files.isNotEmpty()) { PlayerManager.playList(files, 0); selected = emptySet() }
-                    IconBtn("➕", enabled = files.isNotEmpty()) { PlayerManager.enqueue(files); msg = "Añadido a la cola"; selected = emptySet() }
-                    IconBtn("✏", enabled = files.isNotEmpty()) { Nav.push(Screen.Editor(files)) }
-                    IconBtn("✂") { Store.clipPaths = selected.toList(); Store.clipCut = true; msg = "Cortado: pega en otra carpeta"; selected = emptySet() }
-                    IconBtn("⧉") { Store.clipPaths = selected.toList(); Store.clipCut = false; msg = "Copiado: pega en otra carpeta"; selected = emptySet() }
-                    IconBtn("📊", enabled = files.isNotEmpty()) {
-                        Nav.push(Screen.Spectrum(files.map {
-                            val f = File(it)
-                            SpecItem(Uri.fromFile(f), f.name, f.extension.lowercase() in setOf("flac", "wav"))
-                        }))
+                    Text("${selected.size}", Modifier.padding(horizontal = 6.dp), fontWeight = FontWeight.Bold)
+                    val sel = shown.map { it.absolutePath }.filter { it in selected }
+                    IconBtn("▶") { PlayerManager.playList(sel, 0); selected = emptySet() }
+                    IconBtn("✏") { Nav.push(Screen.Editor(sel)) }
+                    IconBtn("📊") {
+                        Nav.push(Screen.Spectrum(sel.map { val f = File(it); SpecItem(Uri.fromFile(f), f.name, f.extension.lowercase() in LOSSLESS) }))
                     }
-                    IconBtn("🗑") { dlg = LibDlg.Delete(selected.toList()) }
-                    if (selected.size == 1) IconBtn("Aa") { dlg = LibDlg.Rename(File(selected.first())) }
+                    IconBtn("🗑") { askDelete = true }
                     IconBtn("☑") { selected = shown.map { it.absolutePath }.toSet() }
                 }
             }
-        } else if (searching) {
-            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
-                Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        query, { query = it }, Modifier.weight(1f), singleLine = true,
-                        placeholder = { Text("Buscar canción o carpeta") }
-                    )
+            searching -> Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+                Row(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("Buscar canción") })
                     IconBtn("✕") { searching = false; query = "" }
                 }
             }
-        } else {
-            Bar(dir.name.ifEmpty { "Almacenamiento" }, null) {
-                IconBtn("▲", enabled = dir.absolutePath != root.absolutePath) { up() }
-                IconBtn("⟳") { refresh() }
+            else -> Bar("Mi música", null) {
                 IconBtn("🔍") { searching = true }
-                IconBtn(if (Store.gridView) "☰" else "▦") { Store.gridView = !Store.gridView; Store.save() }
+                IconBtn("⟳", enabled = !Lib.scanning) { scope.launch { Lib.scan(Store.musicDir) } }
                 Box {
                     IconBtn("⋮") { menu = true }
                     DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem(text = { Text("📁 Nueva carpeta") }, onClick = { menu = false; dlg = LibDlg.NewFolder })
-                        DropdownMenuItem(
-                            text = { Text("📥 Pegar aquí" + if (Store.clipPaths.isNotEmpty()) " (${Store.clipPaths.size})" else "") },
-                            enabled = Store.clipPaths.isNotEmpty(),
-                            onClick = {
-                                menu = false
-                                val paths = Store.clipPaths
-                                val cut = Store.clipCut
-                                val target = dir
-                                runOp {
-                                    val (n, errs) = moveOrCopy(paths, target, cut)
-                                    if (cut) Store.clipPaths = emptyList()
-                                    "$n elemento(s) " + (if (cut) "movido(s)" else "copiado(s)") + if (errs.isNotEmpty()) ". " + errs.first() else ""
-                                }
-                            })
-                        DropdownMenuItem(
-                            text = { Text((if (sub) "☑" else "☐") + " Incluir subcarpetas") },
-                            onClick = { menu = false; sub = !sub })
-                        DropdownMenuItem(text = { Text("🎵 Ir a Música") }, onClick = { menu = false; dir = Store.musicRoot() })
+                        DropdownMenuItem(text = { Text("📂 Cambiar ubicación") }, onClick = { menu = false; Store.choosingDir = true })
+                        DropdownMenuItem(text = { Text("📊 Analizador de calidad") }, onClick = { menu = false; Nav.push(Screen.Spectrum(emptyList())) })
                         DropdownMenuItem(text = { Text("⬇ Descargar de YouTube a MP3") }, onClick = { menu = false; Nav.push(Screen.Youtube) })
                         DropdownMenuItem(text = { Text("⚙ Ajustes") }, onClick = { menu = false; Nav.push(Screen.Settings) })
-                        DropdownMenuItem(text = { Text("❔ Ayuda") }, onClick = { menu = false; dlg = LibDlg.Help })
+                        DropdownMenuItem(text = { Text("❔ Ayuda") }, onClick = { menu = false; help = true })
                     }
                 }
             }
         }
 
-        if (!searching || true) {
+        Row(
+            Modifier.fillMaxWidth().combinedClickable(onClick = { Store.choosingDir = true }).padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                dir.absolutePath, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), fontSize = 11.sp, maxLines = 1,
-                overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
+                "📂 " + File(Store.musicDir).name.ifEmpty { Store.musicDir }, Modifier.weight(1f), fontSize = 12.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                if (Lib.scanning) "Buscando… ${Lib.found}" else "${shown.size} canciones",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        if (Lib.scanning) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (shown.isEmpty()) {
-                Text(
-                    "Aquí no hay música todavía.\n\nEntra en otra carpeta o pega archivos desde el menú ⋮.",
-                    Modifier.align(Alignment.Center).padding(24.dp), textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else if (Store.gridView) {
-                LazyVerticalGrid(
-                    GridCells.Adaptive(104.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    gridItems(shown, key = { it.absolutePath }) { f ->
-                        val sel = f.absolutePath in selected
-                        Column(
-                            Modifier.clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else androidx.compose.ui.graphics.Color.Transparent)
-                                .combinedClickable(
-                                    onClick = {
-                                        if (selected.isNotEmpty()) selected = if (sel) selected - f.absolutePath else selected + f.absolutePath
-                                        else if (f.isDirectory) { dir = f } else { PlayerManager.playList(songs.map { it.absolutePath }, songs.indexOf(f)) }
-                                    },
-                                    onLongClick = { selected = selected + f.absolutePath }
-                                ).padding(6.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            if (f.isDirectory) {
-                                Box(Modifier.size(92.dp), contentAlignment = Alignment.Center) { Text("📁", fontSize = 56.sp) }
-                            } else {
-                                CoverThumb(f.absolutePath, 200, Modifier.size(92.dp).clip(RoundedCornerShape(10.dp)))
-                            }
-                            Text(
-                                if (f.isDirectory) f.name else f.nameWithoutExtension, fontSize = 12.sp, maxLines = 2,
-                                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                    }
+            if (!Lib.scanning && shown.isEmpty()) {
+                Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (query.isNotBlank()) "Ninguna canción coincide con «$query»." else "No encontré música en esta ubicación.",
+                        textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (query.isBlank()) TextButton(onClick = { Store.choosingDir = true }) { Text("Cambiar ubicación") }
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
                     items(shown, key = { it.absolutePath }) { f ->
-                        val sel = f.absolutePath in selected
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else androidx.compose.ui.graphics.Color.Transparent)
-                                .combinedClickable(
-                                    onClick = {
-                                        if (selected.isNotEmpty()) selected = if (sel) selected - f.absolutePath else selected + f.absolutePath
-                                        else if (f.isDirectory) { dir = f } else { PlayerManager.playList(songs.map { it.absolutePath }, songs.indexOf(f)) }
-                                    },
-                                    onLongClick = { selected = selected + f.absolutePath }
-                                ).padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (f.isDirectory) Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text("📁", fontSize = 30.sp) }
-                            else CoverThumb(f.absolutePath, 120, Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)))
-                            Text(
-                                if (f.isDirectory) f.name else f.nameWithoutExtension, Modifier.padding(start = 12.dp), maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        val path = f.absolutePath
+                        SongRow(
+                            f, path in selected, path == PlayerManager.currentPath,
+                            onClick = {
+                                if (selected.isNotEmpty()) selected = if (path in selected) selected - path else selected + path
+                                else Nav.push(Screen.Editor(listOf(path)))
+                            },
+                            onLong = { selected = selected + path }
+                        )
                     }
                 }
             }
             msg?.let { m ->
-                Snackbar(Modifier.align(Alignment.BottomCenter).padding(12.dp), action = {
-                    TextButton(onClick = { msg = null }) { Text("OK") }
-                }) { Text(m) }
+                Snackbar(Modifier.align(Alignment.BottomCenter).padding(12.dp), action = { TextButton(onClick = { msg = null }) { Text("OK") } }) { Text(m) }
             }
         }
     }
 
-    when (val d = dlg) {
-        is LibDlg.NewFolder -> TextPrompt("Nueva carpeta", "Nombre", "", { dlg = null }) { name ->
-            dlg = null
-            val target = dir
-            runOp { if (File(target, name).mkdirs()) "Carpeta creada" else "No se pudo crear la carpeta" }
-        }
-        is LibDlg.Rename -> TextPrompt("Renombrar", "Nuevo nombre", d.file.name, { dlg = null }) { name ->
-            dlg = null
-            val f = d.file
-            runOp {
-                val t = File(f.parentFile, name)
-                if (t.exists()) "Ya existe «$name»" else if (f.renameTo(t)) "Renombrado" else "No se pudo renombrar"
-            }
-            selected = emptySet()
-        }
-        is LibDlg.Delete -> AlertDialog(
-            onDismissRequest = { dlg = null },
+    if (askDelete) {
+        AlertDialog(
+            onDismissRequest = { askDelete = false },
             title = { Text("Eliminar") },
-            text = { Text("¿Eliminar ${d.paths.size} elemento(s)? Esta acción no se puede deshacer.") },
+            text = { Text("¿Eliminar ${selected.size} canción(es) del teléfono? No se puede deshacer.") },
             confirmButton = {
                 TextButton(onClick = {
-                    dlg = null
-                    val ps = d.paths
-                    runOp { ps.forEach { File(it).deleteRecursively() }; "Eliminado" }
+                    askDelete = false
+                    val ps = selected.toList()
                     selected = emptySet()
+                    scope.launch {
+                        withContext(Dispatchers.IO) { ps.forEach { File(it).delete() } }
+                        Lib.songs = Lib.songs.filter { it.absolutePath !in ps }
+                        msg = "${ps.size} eliminada(s)"
+                    }
                 }) { Text("Eliminar") }
             },
-            dismissButton = { TextButton(onClick = { dlg = null }) { Text("Cancelar") } }
+            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancelar") } }
         )
-        is LibDlg.Help -> AlertDialog(
-            onDismissRequest = { dlg = null },
+    }
+    if (help) {
+        AlertDialog(
+            onDismissRequest = { help = false },
             title = { Text("Ayuda") },
             text = {
                 Text(
-                    "• Toca una canción para reproducirla; mantén pulsado para seleccionar.\n" +
-                        "• Con la selección: ▶ reproducir, ➕ a la cola, ✏ editar metadatos y portada, ✂ cortar, ⧉ copiar, 📊 espectrograma, 🗑 eliminar.\n" +
-                        "• Para mover algo: córtalo (✂), entra en la carpeta destino y usa ⋮ → Pegar aquí.\n" +
-                        "• ⟳ actualiza la carpeta si añadiste archivos desde fuera."
+                    "• Toca una canción para editar sus datos y su portada. Arriba tendrás ▶ Reproducir y 📊 Analizador de calidad.\n" +
+                        "• Mantén pulsada una canción para seleccionar varias (reproducir, editar juntas, analizar o eliminar).\n" +
+                        "• La etiqueta de color indica la calidad: Hi-Res, Sin pérdida, Alta (≥256 kbps), Media o Baja.\n" +
+                        "• ⟳ vuelve a buscar música si añadiste archivos desde fuera.\n" +
+                        "• Toca la ruta 📂 para cambiar la ubicación de tu música."
                 )
             },
-            confirmButton = { TextButton(onClick = { dlg = null }) { Text("Entendido") } }
+            confirmButton = { TextButton(onClick = { help = false }) { Text("Entendido") } }
         )
-        null -> {}
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SongRow(f: File, sel: Boolean, playing: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
+    val q by produceState(QualityCache.peek(f), f) {
+        if (value == null) value = withContext(Dispatchers.IO) { QualityCache.get(f) }
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.30f) else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLong)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CoverThumb(f.absolutePath, 128, Modifier.size(50.dp).clip(RoundedCornerShape(8.dp)))
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(
+                (if (playing) "▶ " else "") + f.nameWithoutExtension, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Medium, fontSize = 15.sp,
+                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                val qq = q
+                Text(
+                    qq?.format ?: f.extension.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+                Text(
+                    qq?.detail ?: "…", Modifier.padding(start = 6.dp), fontSize = 12.sp, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        q?.let { qq ->
+            if (qq.level < 5) Text(
+                qualityLabel(qq.level), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = qualityColor(qq.level),
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(qualityColor(qq.level).copy(alpha = 0.15f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            )
+        }
     }
 }
 
