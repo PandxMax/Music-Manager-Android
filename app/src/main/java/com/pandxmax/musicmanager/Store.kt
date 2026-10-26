@@ -20,12 +20,13 @@ object Store {
     var accent by mutableStateOf(0xFF7C5CFF.toInt())
     var coverTint by mutableStateOf(true)
     var dynamicAccent by mutableStateOf<Int?>(null)
-    var provider by mutableStateOf("Claude")
+    var provider by mutableStateOf("Gemini")
     var discogsToken by mutableStateOf("")
     var lastDir by mutableStateOf("")
     /** Carpeta elegida por el usuario donde está su música ("" = aún no elegida). */
     var musicDir by mutableStateOf("")
     var choosingDir by mutableStateOf(false)
+    var folderView by mutableStateOf(false)
     var coverMax by mutableStateOf(1200)
 
     var coverVersion by mutableIntStateOf(0)
@@ -40,10 +41,11 @@ object Store {
         dark = prefs.getBoolean("dark", true)
         accent = prefs.getInt("accent", 0xFF7C5CFF.toInt())
         coverTint = prefs.getBoolean("coverTint", true)
-        provider = prefs.getString("provider", "Claude") ?: "Claude"
         discogsToken = prefs.getString("discogs", "") ?: ""
         lastDir = prefs.getString("lastDir", "") ?: ""
         musicDir = prefs.getString("musicDir", "") ?: ""
+        folderView = prefs.getBoolean("folderView", false)
+        provider = prefs.getString("provider", "Gemini") ?: "Gemini"
         coverMax = prefs.getInt("coverMax", 1200)
     }
 
@@ -51,7 +53,7 @@ object Store {
         prefs.edit()
             .putBoolean("dark", dark).putInt("accent", accent).putBoolean("coverTint", coverTint)
             .putString("provider", provider).putString("discogs", discogsToken)
-            .putString("lastDir", lastDir).putString("musicDir", musicDir).putInt("coverMax", coverMax)
+            .putString("lastDir", lastDir).putString("musicDir", musicDir).putBoolean("folderView", folderView).putInt("coverMax", coverMax)
             .apply()
     }
 

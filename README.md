@@ -18,7 +18,8 @@ La versión para Windows está en [PandxMax/MusicManager](https://github.com/Pan
 - **Portadas**: elegir de la galería, **buscar automáticamente** (iTunes y Deezer, varias opciones), quitar, guardar como
   `cover.jpg`, ver en grande, y si no hay nada, abrir Google Imágenes.
 - **Letras** con LRCLIB (sincronizadas) y edición.
-- **IA** (Claude, ChatGPT o Gemini con tu propia API key): rellenar metadatos y sugerir géneros.
+- **IA** (Gemini gratis, Claude o ChatGPT con tu propia API key): rellenar metadatos y sugerir géneros.
+  La key gratuita de Gemini se saca en [Google AI Studio](https://aistudio.google.com/apikey); en Ajustes está explicado paso a paso.
 - **MusicBrainz** y **Discogs** (token) para rellenar etiquetas.
 - **Botones web**: YouTube, Spotify, Tidal, Qobuz y Wikipedia.
 - **Analizador de calidad** (espectrograma) de audio, con **comparación** de canciones de distintos lugares.
@@ -39,6 +40,9 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.03** — Opción «Ver en carpetas» (muestra en qué carpeta está cada canción); la lista se guarda y se actualiza
+  sola en segundo plano cuando cambias tu música (ya no hay que volver a analizar); ayuda paso a paso para conseguir
+  una API key gratis de Gemini, con enlace directo y botón «Probar la key».
 - **1.02** — Al abrir se elige la ubicación de la música (se puede cambiar cuando quieras); lista de canciones con formato y calidad;
   tocar una canción abre la edición de datos y portada, con ▶ Reproducir y 📊 Analizador de calidad arriba; reproducción
   inmediata y app mucho más rápida (versión optimizada y APK más ligero).

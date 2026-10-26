@@ -342,6 +342,7 @@ private fun AiFillDialog(initTitle: String, initArtist: String, onApply: (Map<St
         title = { Text("✨ Rellenar con IA") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (Store.key(Store.provider).isBlank()) NoKeyNotice(onDismiss)
                 Text("Escribe la canción y el artista. La IA buscará los datos; revísalos antes de aplicar (puede equivocarse).", fontSize = 12.sp)
                 OutlinedTextField(t, { t = it }, label = { Text("Canción") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 OutlinedTextField(a, { a = it }, label = { Text("Artista") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
@@ -383,7 +384,8 @@ private fun GenresDialog(title: String, artist: String, album: String, onPick: (
         title = { Text("🎼 Géneros sugeridos") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (items == null) Text("Consultando a la IA…")
+                if (Store.key(Store.provider).isBlank()) NoKeyNotice(onDismiss)
+                else if (items == null) Text("Consultando a la IA…")
                 else if (items!!.isEmpty()) Text(if (err.isNotEmpty()) "No se pudo: $err" else "Sin sugerencias.")
                 else for (g in items!!) TextButton(onClick = { onPick(g) }, modifier = Modifier.fillMaxWidth()) { Text(g, textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth()) }
             }
@@ -463,4 +465,16 @@ private fun CoverSearchDialog(artist: String, title: String, onPick: (ByteArray)
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } }
     )
+}
+
+
+@Composable
+private fun NoKeyNotice(onDismiss: () -> Unit) {
+    Column(Modifier.padding(bottom = 8.dp)) {
+        Text(
+            "Para usar la IA falta poner tu API key de ${Store.provider}. Con Gemini es gratis: en Ajustes te explico cómo sacarla paso a paso.",
+            fontSize = 13.sp, color = MaterialTheme.colorScheme.error
+        )
+        Button(onClick = { onDismiss(); Nav.push(Screen.Settings) }, modifier = Modifier.padding(top = 6.dp)) { Text("⚙ Ir a poner la key") }
+    }
 }

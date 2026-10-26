@@ -1,6 +1,11 @@
 package com.pandxmax.musicmanager
 
+import android.content.Context
+import android.database.ContentObserver
 import android.media.MediaMetadataRetriever
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -10,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -28,7 +34,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -49,6 +58,37 @@ fun qualityColor(l: Int) = when (l) {
 
 object QualityCache {
     private val mem = ConcurrentHashMap<String, Quality>()
+    @Volatile private var loaded = false
+    @Volatile var dirty = false
+    private fun file() = File(Store.app.filesDir, "quality.tsv")
+
+    /** Carga la calidad ya calculada en otras sesiones (así no se vuelve a analizar). */
+    @Synchronized
+    fun load() {
+        if (loaded) return
+        loaded = true
+        try {
+            file().forEachLine { line ->
+                val p = line.split('\t')
+                if (p.size == 4) mem[p[0]] = Quality(p[1], p[2], p[3].toIntOrNull() ?: 5)
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    @Synchronized
+    fun save(valid: Set<String>) {
+        if (!dirty) return
+        dirty = false
+        try {
+            val sb = StringBuilder()
+            for ((k, q) in mem) if (k.substringBefore('|') in valid) sb.append(k).append('\t').append(q.format).append('\t').append(q.detail).append('\t').append(q.level).append('\n')
+            val tmp = File(file().path + ".tmp")
+            tmp.writeText(sb.toString())
+            tmp.renameTo(file())
+        } catch (_: Throwable) {
+        }
+    }
 
     private fun key(f: File) = "${f.absolutePath}|${f.lastModified()}|${f.length()}"
 
@@ -90,6 +130,7 @@ object QualityCache {
         }
         val q = Quality(fmt, parts.joinToString(" · "), level)
         mem[k] = q
+        dirty = true
         return q
     }
 }
@@ -98,14 +139,55 @@ object QualityCache {
 
 object Lib {
     var songs by mutableStateOf<List<File>>(emptyList())
+    /** true solo la primera vez (cuando aún no hay nada que mostrar). */
     var scanning by mutableStateOf(false)
     var found by mutableIntStateOf(0)
     var scannedDir = ""
 
-    suspend fun scan(dirPath: String) {
-        if (dirPath.isEmpty()) return
-        scanning = true
-        found = 0
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var job: Job? = null
+    @Volatile private var again = false
+    private val handler = Handler(Looper.getMainLooper())
+    private val debounced = Runnable { requestScan() }
+
+    private fun listFile() = File(Store.app.filesDir, "songs.txt")
+
+    /** Muestra al instante la lista guardada de la última vez. */
+    suspend fun loadSaved(dir: String) {
+        if (scannedDir == dir && songs.isNotEmpty()) return
+        val saved = withContext(Dispatchers.IO) {
+            QualityCache.load()
+            try {
+                val lines = listFile().readLines()
+                if (lines.firstOrNull() == dir) lines.drop(1).filter { it.isNotEmpty() }.map { File(it) } else null
+            } catch (_: Throwable) { null }
+        }
+        songs = saved ?: emptyList()
+        scannedDir = dir
+    }
+
+    /** Pide revisar la carpeta en segundo plano; se puede llamar todas las veces que haga falta. */
+    fun requestScan() {
+        if (Store.musicDir.isEmpty()) return
+        if (job?.isActive == true) { again = true; return }
+        job = scope.launch {
+            do {
+                again = false
+                scan(Store.musicDir)
+            } while (again)
+            fillQuality()
+        }
+        job?.invokeOnCompletion { if (again) handler.post { requestScan() } }
+    }
+
+    /** Igual que requestScan pero agrupando muchos avisos seguidos (p. ej. al copiar varios archivos). */
+    fun requestScanSoon(delayMs: Long = 1500) {
+        handler.removeCallbacks(debounced)
+        handler.postDelayed(debounced, delayMs)
+    }
+
+    private suspend fun scan(dirPath: String) {
+        if (songs.isEmpty()) { scanning = true; found = 0 }
         val list = withContext(Dispatchers.IO) {
             val root = File(dirPath)
             val androidDir = File(Environment.getExternalStorageDirectory(), "Android").absolutePath
@@ -124,10 +206,53 @@ object Lib {
             out.sortBy { it.nameWithoutExtension.lowercase() }
             out
         }
-        songs = list
+        if (dirPath != Store.musicDir) return
+        val changed = list.map { it.absolutePath } != songs.map { it.absolutePath }
+        if (changed) {
+            songs = list
+            withContext(Dispatchers.IO) {
+                try {
+                    listFile().writeText(dirPath + "\n" + list.joinToString("\n") { it.absolutePath })
+                } catch (_: Throwable) {
+                }
+            }
+        }
         found = list.size
         scannedDir = dirPath
         scanning = false
+    }
+
+    /** Calcula en segundo plano la calidad de las canciones que aún no la tienen y la guarda. */
+    private suspend fun fillQuality() {
+        val all = songs
+        withContext(Dispatchers.IO) {
+            for (f in all) {
+                if (job?.isActive != true || again) break
+                if (QualityCache.peek(f) == null) QualityCache.get(f)
+            }
+            QualityCache.save(all.map { it.absolutePath }.toSet())
+        }
+    }
+
+    fun forget(paths: Collection<String>) {
+        songs = songs.filter { it.absolutePath !in paths }
+        requestScanSoon(300)
+    }
+}
+
+/** Avisa a la biblioteca cuando Android detecta música nueva, borrada o cambiada. */
+object LibWatcher {
+    private var registered = false
+    fun register(ctx: Context) {
+        if (registered) return
+        registered = true
+        val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { Lib.requestScanSoon() }
+        }
+        try {
+            ctx.contentResolver.registerContentObserver(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, obs)
+        } catch (_: Throwable) {
+        }
     }
 }
 
@@ -210,17 +335,28 @@ fun LibraryScreen() {
     var askDelete by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
 
+    var openFolder by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(Store.musicDir) {
-        if (Lib.scannedDir != Store.musicDir) Lib.scan(Store.musicDir)
+        openFolder = null
+        Lib.loadSaved(Store.musicDir)
+        Lib.requestScan()
     }
 
     val songs = Lib.songs
-    val shown = remember(songs, query) {
-        if (query.isBlank()) songs else songs.filter { it.name.contains(query, ignoreCase = true) }
+    val matching = remember(songs, query) {
+        if (query.isBlank()) songs else songs.filter { it.name.contains(query, ignoreCase = true) || (it.parentFile?.name ?: "").contains(query, ignoreCase = true) }
     }
+    // Carpetas que contienen música (en la vista por carpetas)
+    val folders = remember(matching) {
+        matching.groupBy { it.parent ?: "" }.entries.sortedBy { File(it.key).name.lowercase() }.map { it.key to it.value }
+    }
+    val inFolder = Store.folderView && openFolder != null
+    val shown = if (inFolder) matching.filter { it.parent == openFolder } else matching
 
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
     BackHandler(enabled = selected.isEmpty() && searching) { searching = false; query = "" }
+    BackHandler(enabled = selected.isEmpty() && !searching && inFolder) { openFolder = null }
 
     Column(Modifier.fillMaxSize()) {
         when {
@@ -249,7 +385,6 @@ fun LibraryScreen() {
             }
             else -> Bar("Mi música", null) {
                 IconBtn("🔍") { searching = true }
-                IconBtn("⟳", enabled = !Lib.scanning) { scope.launch { Lib.scan(Store.musicDir) } }
                 Box {
                     IconBtn("⋮") { menu = true }
                     DropdownMenu(menu, { menu = false }) {
@@ -264,22 +399,55 @@ fun LibraryScreen() {
         }
 
         Row(
-            Modifier.fillMaxWidth().combinedClickable(onClick = { Store.choosingDir = true }).padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                "📂 " + File(Store.musicDir).name.ifEmpty { Store.musicDir }, Modifier.weight(1f), fontSize = 12.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
+            FilterChip(
+                selected = !Store.folderView, onClick = { Store.folderView = false; openFolder = null; Store.save() },
+                label = { Text("🎵 Canciones") }
             )
+            FilterChip(
+                selected = Store.folderView, onClick = { Store.folderView = true; Store.save() },
+                label = { Text("📁 Ver en carpetas") }
+            )
+            Spacer(Modifier.weight(1f))
             Text(
-                if (Lib.scanning) "Buscando… ${Lib.found}" else "${shown.size} canciones",
+                if (Lib.scanning) "Buscando… ${Lib.found}"
+                else if (Store.folderView && !inFolder) "${folders.size} carpetas" else "${shown.size} canciones",
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (inFolder) {
+            Row(
+                Modifier.fillMaxWidth().combinedClickable(onClick = { openFolder = null }).padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconBtn("←") { openFolder = null }
+                Column(Modifier.weight(1f)) {
+                    Text("📁 " + File(openFolder!!).name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        relPath(openFolder!!), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            Text(
+                "📂 " + Store.musicDir + "  ·  cambiar", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().combinedClickable(onClick = { Store.choosingDir = true }).padding(horizontal = 14.dp, vertical = 4.dp)
             )
         }
         if (Lib.scanning) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (!Lib.scanning && shown.isEmpty()) {
+            if (Store.folderView && !inFolder && folders.isNotEmpty()) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
+                    items(folders, key = { it.first }) { (dirPath, list) ->
+                        FolderRow(dirPath, list) { openFolder = dirPath; selected = emptySet() }
+                    }
+                }
+            } else if (!Lib.scanning && shown.isEmpty()) {
                 Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         if (query.isNotBlank()) "Ninguna canción coincide con «$query»." else "No encontré música en esta ubicación.",
@@ -320,7 +488,7 @@ fun LibraryScreen() {
                     selected = emptySet()
                     scope.launch {
                         withContext(Dispatchers.IO) { ps.forEach { File(it).delete() } }
-                        Lib.songs = Lib.songs.filter { it.absolutePath !in ps }
+                        Lib.forget(ps)
                         msg = "${ps.size} eliminada(s)"
                     }
                 }) { Text("Eliminar") }
@@ -337,12 +505,44 @@ fun LibraryScreen() {
                     "• Toca una canción para editar sus datos y su portada. Arriba tendrás ▶ Reproducir y 📊 Analizador de calidad.\n" +
                         "• Mantén pulsada una canción para seleccionar varias (reproducir, editar juntas, analizar o eliminar).\n" +
                         "• La etiqueta de color indica la calidad: Hi-Res, Sin pérdida, Alta (≥256 kbps), Media o Baja.\n" +
-                        "• ⟳ vuelve a buscar música si añadiste archivos desde fuera.\n" +
+                        "• «Ver en carpetas» muestra en qué carpeta está cada canción.\n" +
+                        "• La lista se actualiza sola cuando añades, borras o cambias música.\n" +
                         "• Toca la ruta 📂 para cambiar la ubicación de tu música."
                 )
             },
             confirmButton = { TextButton(onClick = { help = false }) { Text("Entendido") } }
         )
+    }
+}
+
+private fun relPath(dir: String): String {
+    val base = Store.musicDir.trimEnd('/')
+    val r = dir.removePrefix(base).trimStart('/')
+    return if (r.isEmpty()) "(carpeta principal)" else r
+}
+
+@Composable
+private fun FolderRow(dirPath: String, list: List<File>, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(54.dp)) {
+            CoverThumb(list.first().absolutePath, 128, Modifier.size(50.dp).clip(RoundedCornerShape(8.dp)))
+            Text(
+                "📁", fontSize = 16.sp,
+                modifier = Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surface).padding(horizontal = 2.dp)
+            )
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(File(dirPath).name.ifEmpty { dirPath }, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${list.size} canciones  ·  " + relPath(dirPath), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text("›", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

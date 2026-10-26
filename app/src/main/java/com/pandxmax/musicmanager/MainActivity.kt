@@ -44,9 +44,16 @@ object Nav {
 }
 
 class MainActivity : ComponentActivity() {
+    override fun onStart() {
+        super.onStart()
+        // Al volver a la app se revisa la carpeta en silencio por si cambió algo
+        if (Environment.isExternalStorageManager()) Lib.requestScanSoon(400)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PlayerManager.connect(this)
+        LibWatcher.register(this)
         if (Build.VERSION.SDK_INT >= 33) {
             val l = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
             l.launch(Manifest.permission.POST_NOTIFICATIONS)

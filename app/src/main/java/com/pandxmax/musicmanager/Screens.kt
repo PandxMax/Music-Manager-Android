@@ -294,7 +294,7 @@ fun YoutubeScreen() {
                             }
                             done = files
                             log = if (files.isEmpty()) "Terminó, pero no encuentro el MP3 nuevo (quizá ya existía)." else "✔ Listo. Puedes editarle metadatos y portada."
-                            Store.libVersion++
+                            Store.libVersion++; Lib.requestScan()
                         } catch (e: Throwable) {
                             log = "No se pudo descargar: ${e.message}"
                         }
@@ -348,6 +348,22 @@ fun SettingsScreen() {
                 key, { key = it; Store.setKey(provider, it.trim()) }, label = { Text("API key de $provider") }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            var test by remember { mutableStateOf<String?>(null) }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(enabled = key.isNotBlank() && test != "Probando…", onClick = {
+                    test = "Probando…"
+                    scope.launch {
+                        test = try {
+                            val r = withContext(Dispatchers.IO) { Ai.chat(provider, model.trim(), key.trim(), "", "Responde solo con la palabra OK.") }
+                            if (r.isNotBlank()) "✔ La key funciona" else "Respondió vacío"
+                        } catch (e: Throwable) {
+                            "✖ No funciona: " + (e.message ?: "error").take(160)
+                        }
+                    }
+                }) { Text("Probar la key") }
+                test?.let { Text(it, Modifier.padding(start = 10.dp), fontSize = 12.sp) }
+            }
+            AiKeyHelp(provider)
             OutlinedTextField(
                 discogs, { discogs = it; Store.discogsToken = it.trim(); Store.save() }, label = { Text("Token de Discogs (opcional)") },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -433,4 +449,41 @@ private fun latestRelease(): Pair<String, String>? {
         }
     }
     return null
+}
+
+
+/** Explica cómo conseguir la API key del proveedor elegido, con el enlace directo. */
+@Composable
+fun AiKeyHelp(provider: String) {
+    val ctx = LocalContext.current
+    val (steps, url, btn) = when (provider) {
+        "Gemini" -> Triple(
+            "Gemini tiene un plan GRATUITO (con un límite diario de usos, más que suficiente para tu música):\n" +
+                "1. Pulsa el botón de abajo (se abre Google AI Studio).\n" +
+                "2. Entra con tu cuenta de Google (la de Gmail).\n" +
+                "3. Acepta las condiciones si te las pide.\n" +
+                "4. Pulsa «Create API key» / «Crear clave de API».\n" +
+                "5. Copia la clave (empieza por «AIza…») y pégala arriba en «API key de Gemini».\n" +
+                "6. Pulsa «Probar la key». No hace falta poner tarjeta.",
+            "https://aistudio.google.com/apikey", "🔑 Conseguir key gratis de Gemini"
+        )
+        "Claude" -> Triple(
+            "Claude es de pago (se recarga saldo). Entra en la consola de Anthropic, ve a «API Keys», pulsa " +
+                "«Create Key», copia la clave (empieza por «sk-ant-») y pégala arriba.\nSi quieres algo gratis, elige Gemini.",
+            "https://console.anthropic.com/settings/keys", "🔑 Abrir consola de Anthropic"
+        )
+        else -> Triple(
+            "ChatGPT (API de OpenAI) es de pago (se recarga saldo). Entra en la plataforma de OpenAI, ve a «API keys», " +
+                "pulsa «Create new secret key», cópiala (empieza por «sk-») y pégala arriba.\nSi quieres algo gratis, elige Gemini.",
+            "https://platform.openai.com/api-keys", "🔑 Abrir OpenAI"
+        )
+    }
+    Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text("¿Cómo consigo la key de $provider?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(steps, Modifier.padding(top = 4.dp), fontSize = 13.sp)
+            Button(onClick = { openUrl(ctx, url) }, modifier = Modifier.padding(top = 8.dp)) { Text(btn) }
+            Text(url, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        }
+    }
 }
