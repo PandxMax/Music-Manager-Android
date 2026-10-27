@@ -67,9 +67,10 @@ class Capturas {
             Quality("MP3", "44.1 kHz · 128 kbps", 4), Quality("OPUS", "48 kHz · 160 kbps", 3)
         )
         songs.forEachIndexed { i, f -> QualityCache.put(f, qs[i]) }
-        Store.musicDir = root.absolutePath
+        Store.setFolders(listOf(root.absolutePath), emptyList())
+        Store.extraRoots = listOf(root.absolutePath)
         Lib.songs = songs.sortedBy { it.nameWithoutExtension.lowercase() }
-        Lib.scannedDir = root.absolutePath
+        Lib.scannedDir = Store.libKey
         PlayerManager.currentPath = songs[0].absolutePath
         PlayerManager.queue = songs.map { it.absolutePath }
         PlayerManager.duration = 245_000
@@ -99,12 +100,12 @@ class Capturas {
         }
     }
 
-    @Test fun a1_ubicacion() { Store.musicDir = ""; shot("01_ubicacion") { LocationScreen() } }
+    @Test fun a1_ubicacion() { shot("01_seleccion_carpetas") { LocationScreen() } }
     @Test fun a2_canciones() { Store.folderView = false; shot("02_canciones") { WithMini { LibraryScreen() } } }
     @Test fun a3_carpetas() { Store.folderView = true; shot("03_carpetas") { WithMini { LibraryScreen() } } }
     @Test fun a4_reproductor() { shot("04_reproductor") { PlayerScreen() } }
     @Test fun a4b_reproductor_aleatorio() { PlayerManager.shuffle = true; PlayerManager.repeat = 1; shot("04b_reproductor_aleatorio_repetir") { PlayerScreen() } }
-    @Test fun a4c_cola() { PlayerManager.currentPath = songs[2].absolutePath; shot("04c_cola") { QueueSheet() } }
+    @Test fun a4c_cola() { PlayerManager.currentPath = songs[2].absolutePath; shot("04c_cola") { QueueScreen() } }
     @Test fun a5_editor() { shot("05_editor") { EditorScreen(listOf(songs[0].absolutePath)) } }
     @Test fun a6_ajustes_cancion() { shot("06_ajustes_cancion") { FxScreen(songs[0].absolutePath) } }
     @Test fun a7_ajustes() { shot("07_ajustes") { SettingsScreen() } }

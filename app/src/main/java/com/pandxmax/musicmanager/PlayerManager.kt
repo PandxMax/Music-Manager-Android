@@ -160,6 +160,13 @@ object PlayerManager {
         controller?.let { navDir = if (i >= it.currentMediaItemIndex) 1 else -1; it.seekTo(i, 0L); it.play() }
     }
     fun removeAt(i: Int) { controller?.removeMediaItem(i) }
+    fun move(from: Int, to: Int) {
+        val c = controller ?: return
+        if (from == to || from !in 0 until c.mediaItemCount || to !in 0 until c.mediaItemCount) return
+        c.moveMediaItem(from, to)
+        // se actualiza al instante en pantalla (sin esperar al reproductor)
+        val q = queue.toMutableList(); val x = q.removeAt(from); q.add(to, x); queue = q
+    }
     fun clear() { controller?.let { it.stop(); it.clearMediaItems() } }
     fun toggle() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
     fun next() { navDir = 1; controller?.seekToNext() }

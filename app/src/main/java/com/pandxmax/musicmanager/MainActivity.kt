@@ -32,6 +32,7 @@ sealed class Screen {
     object Library : Screen()
     class Editor(val paths: List<String>) : Screen()
     object Player : Screen()
+    object Queue : Screen()
     class Spectrum(val items: List<SpecItem>) : Screen()
     object Youtube : Screen()
     class Fx(val path: String) : Screen()
@@ -75,7 +76,7 @@ fun Root() {
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         // Lo primero que se pide es la carpeta de la música; después, el permiso para poder editarla
-        if (Store.musicDir.isEmpty() || Store.choosingDir) {
+        if (Store.musicDirs.isEmpty() || Store.choosingDir) {
             Box(Modifier.fillMaxSize().systemBarsPadding()) { LocationScreen() }
         } else if (!hasAccess) {
             Box(Modifier.fillMaxSize().systemBarsPadding()) { PermissionScreen() }
@@ -88,13 +89,14 @@ fun Root() {
                         is Screen.Library -> LibraryScreen()
                         is Screen.Editor -> EditorScreen(top.paths)
                         is Screen.Player -> PlayerScreen()
+                        is Screen.Queue -> QueueScreen()
                         is Screen.Spectrum -> SpectrumScreen(top.items)
                         is Screen.Youtube -> YoutubeScreen()
                         is Screen.Fx -> FxScreen(top.path)
                         is Screen.Settings -> SettingsScreen()
                     }
                 }
-                if (top !is Screen.Player && PlayerManager.currentPath != null) MiniPlayer()
+                if (top !is Screen.Player && top !is Screen.Queue && PlayerManager.currentPath != null) MiniPlayer()
             }
         }
     }

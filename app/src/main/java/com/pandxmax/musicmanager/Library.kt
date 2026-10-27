@@ -173,12 +173,12 @@ object Lib {
 
     /** Pide revisar la carpeta en segundo plano; se puede llamar todas las veces que haga falta. */
     fun requestScan() {
-        if (Store.musicDir.isEmpty()) return
+        if (Store.musicDirs.isEmpty()) return
         if (job?.isActive == true) { again = true; return }
         job = scope.launch {
             do {
                 again = false
-                scan(Store.musicDir)
+                scan(Store.libKey)
             } while (again)
             fillQuality()
         }
@@ -193,25 +193,29 @@ object Lib {
 
     private suspend fun scan(dirPath: String) {
         if (songs.isEmpty()) { scanning = true; found = 0 }
+        val incl = Store.musicDirs
+        val excl = Store.excludedDirs.toSet()
         val list = withContext(Dispatchers.IO) {
-            val root = File(dirPath)
             val androidDir = File(Environment.getExternalStorageDirectory(), "Android").absolutePath
-            val out = ArrayList<File>()
-            try {
-                root.walkTopDown()
-                    .onEnter { !it.name.startsWith(".") && it.absolutePath != androidDir }
-                    .forEach { f ->
-                        if (f.isFile && f.extension.lowercase() in AUDIO_EXT && !f.name.startsWith(".")) {
-                            out.add(f)
-                            if (out.size % 50 == 0) found = out.size
+            val out = LinkedHashMap<String, File>()
+            for (d in incl) {
+                try {
+                    File(d).walkTopDown()
+                        .onEnter { !it.name.startsWith(".") && it.absolutePath != androidDir && it.absolutePath !in excl }
+                        .forEach { f ->
+                            if (f.isFile && f.extension.lowercase() in AUDIO_EXT && !f.name.startsWith(".")) {
+                                out[f.absolutePath] = f
+                                if (out.size % 50 == 0) found = out.size
+                            }
                         }
-                    }
-            } catch (_: Throwable) {
+                } catch (_: Throwable) {
+                }
             }
-            out.sortBy { it.nameWithoutExtension.lowercase() }
-            out
+            val l = ArrayList(out.values)
+            l.sortBy { it.nameWithoutExtension.lowercase() }
+            l
         }
-        if (dirPath != Store.musicDir) return
+        if (dirPath != Store.libKey) return
         val changed = list.map { it.absolutePath } != songs.map { it.absolutePath }
         if (changed) {
             songs = list
@@ -261,75 +265,6 @@ object LibWatcher {
     }
 }
 
-/** Convierte la carpeta elegida en el selector del sistema a una ruta normal. */
-private fun treeToPath(uri: Uri): String? {
-    return try {
-        val id = DocumentsContract.getTreeDocumentId(uri)
-        val parts = id.split(":", limit = 2)
-        val vol = parts[0]
-        val rel = if (parts.size > 1) parts[1] else ""
-        val base = if (vol.equals("primary", true)) Environment.getExternalStorageDirectory().absolutePath else "/storage/$vol"
-        if (rel.isEmpty()) base else "$base/$rel"
-    } catch (_: Throwable) {
-        null
-    }
-}
-
-// ------------------------------------------------------------------ Pantalla: elegir ubicación
-
-@Composable
-fun LocationScreen() {
-    var err by remember { mutableStateOf<String?>(null) }
-    fun choose(path: String) {
-        val f = File(path)
-        if (!f.isDirectory) { err = "No se puede abrir esa carpeta"; return }
-        Store.musicDir = f.absolutePath
-        Store.choosingDir = false
-        Store.save()
-    }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) treeToPath(uri)?.let { choose(it) } ?: run { err = "No se pudo usar esa carpeta" }
-    }
-    val canCancel = Store.musicDir.isNotEmpty()
-    BackHandler(enabled = canCancel) { Store.choosingDir = false }
-
-    Column(
-        Modifier.fillMaxSize().padding(28.dp),
-        verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        androidx.compose.foundation.Image(
-            androidx.compose.ui.res.painterResource(R.drawable.logo_panda), contentDescription = "Music Manager",
-            modifier = Modifier.size(110.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text("Selecciona la ubicación de tu música", fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "Elige la carpeta donde guardas tus canciones. Buscaré la música dentro de ella y de sus subcarpetas.\n" +
-                "Podrás cambiarla cuando quieras.",
-            textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = { picker.launch(null) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-            Text("📂  Elegir carpeta", fontSize = 16.sp)
-        }
-        Spacer(Modifier.height(10.dp))
-        OutlinedButton(onClick = { choose(Store.musicRoot().absolutePath) }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
-            Text("🎵  Usar la carpeta «Music» del teléfono")
-        }
-        Spacer(Modifier.height(6.dp))
-        TextButton(onClick = { choose(Environment.getExternalStorageDirectory().absolutePath) }) {
-            Text("Buscar en todo el teléfono")
-        }
-        if (canCancel) {
-            Spacer(Modifier.height(6.dp))
-            Text("Ahora: ${Store.musicDir}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-            TextButton(onClick = { Store.choosingDir = false }) { Text("Cancelar") }
-        }
-        err?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
-    }
-}
-
 // ------------------------------------------------------------------ Pantalla principal: lista de canciones
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -347,9 +282,9 @@ fun LibraryScreen() {
 
     var openFolder by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Store.musicDir) {
+    LaunchedEffect(Store.libKey) {
         openFolder = null
-        Lib.loadSaved(Store.musicDir)
+        Lib.loadSaved(Store.libKey)
         Lib.requestScan()
     }
 
@@ -358,7 +293,9 @@ fun LibraryScreen() {
         if (query.isBlank()) songs else songs.filter { it.name.contains(query, ignoreCase = true) || (it.parentFile?.name ?: "").contains(query, ignoreCase = true) }
     }
     // Vista por carpetas como un árbol: se empieza en la raíz y se entra a las subcarpetas
-    val root = Store.musicDir.trimEnd('/')
+    // con una sola carpeta elegida, la raíz es esa; con varias, arriba se ven las carpetas elegidas
+    val multi = Store.musicDirs.size > 1
+    val root = if (multi) "" else Store.musicDir.trimEnd('/')
     val curDir = if (Store.folderView) (openFolder ?: root) else root
     val tree = remember(matching, curDir, Store.folderView, query) {
         // al buscar se muestran directamente las canciones que coinciden
@@ -366,7 +303,10 @@ fun LibraryScreen() {
             val sub = LinkedHashMap<String, ArrayList<File>>()
             val direct = ArrayList<File>()
             val prefix = "$curDir/"
-            for (f in matching) {
+            if (curDir.isEmpty()) for (f in matching) {
+                val r = Store.musicDirs.firstOrNull { f.absolutePath.startsWith("$it/") } ?: continue
+                sub.getOrPut(r) { ArrayList() }.add(f)
+            } else for (f in matching) {
                 val par = f.parent ?: continue
                 if (par == curDir) direct.add(f)
                 else if (par.startsWith(prefix)) {
@@ -382,7 +322,7 @@ fun LibraryScreen() {
     val shown = if (tree != null) tree.second else matching
     fun goUp() {
         val par = File(curDir).parent
-        openFolder = if (par == null || !par.startsWith(root) || par == root) null else par
+        openFolder = if (curDir in Store.musicDirs || par == null || (root.isNotEmpty() && (!par.startsWith(root) || par == root))) null else par
         selected = emptySet()
     }
 
@@ -475,7 +415,7 @@ fun LibraryScreen() {
             ) {
                 Icon(Icons.Filled.FolderOpen, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    File(Store.musicDir).name.ifEmpty { Store.musicDir }, Modifier.weight(1f).padding(start = 6.dp, end = 8.dp),
+                    (if (multi) plural(Store.musicDirs.size, "carpeta elegida", "carpetas elegidas") else File(Store.musicDir).name.ifEmpty { Store.musicDir }) + "  ·  cambiar", Modifier.weight(1f).padding(start = 6.dp, end = 8.dp),
                     fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(countText, fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -560,7 +500,8 @@ fun LibraryScreen() {
 fun plural(n: Int, one: String, many: String) = "$n " + if (n == 1) one else many
 
 private fun relPath(dir: String): String {
-    val base = Store.musicDir.trimEnd('/')
+    val base = (Store.musicDirs.firstOrNull { dir == it || dir.startsWith("$it/") } ?: Store.musicDir).trimEnd('/')
+    if (dir == base && Store.musicDirs.size > 1) return volumeLabel(dir)
     val r = dir.removePrefix(base).trimStart('/')
     return if (r.isEmpty()) "(carpeta principal)" else r
 }

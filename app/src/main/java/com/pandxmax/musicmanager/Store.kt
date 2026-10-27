@@ -26,6 +26,21 @@ object Store {
     /** Carpeta elegida por el usuario donde está su música ("" = aún no elegida). */
     var musicDir by mutableStateOf("")
     var choosingDir by mutableStateOf(false)
+    /** Carpetas elegidas (con sus subcarpetas) y carpetas excluidas dentro de ellas. */
+    var musicDirs by mutableStateOf<List<String>>(emptyList())
+    var excludedDirs by mutableStateOf<List<String>>(emptyList())
+    /** Carpetas añadidas a mano con «Agregar carpeta o almacenamiento» (aparecen como raíces en la selección). */
+    var extraRoots by mutableStateOf<List<String>>(emptyList())
+    val libKey: String get() = musicDirs.joinToString("|") + "#" + excludedDirs.joinToString("|")
+
+    fun setFolders(inc: List<String>, exc: List<String>) {
+        musicDirs = inc.distinct()
+        excludedDirs = exc.distinct()
+        musicDir = musicDirs.firstOrNull() ?: ""
+        save()
+    }
+
+    private fun list(k: String) = (prefs.getString(k, "") ?: "").split("\n").filter { it.isNotBlank() }
     var folderView by mutableStateOf(false)
     var coverMax by mutableStateOf(1200)
 
@@ -44,6 +59,9 @@ object Store {
         discogsToken = prefs.getString("discogs", "") ?: ""
         lastDir = prefs.getString("lastDir", "") ?: ""
         musicDir = prefs.getString("musicDir", "") ?: ""
+        musicDirs = list("musicDirs").ifEmpty { if (musicDir.isNotEmpty()) listOf(musicDir) else emptyList() }
+        excludedDirs = list("excludedDirs")
+        extraRoots = list("extraRoots")
         folderView = prefs.getBoolean("folderView", false)
         provider = prefs.getString("provider", "Gemini") ?: "Gemini"
         coverMax = prefs.getInt("coverMax", 1200)
@@ -53,7 +71,8 @@ object Store {
         prefs.edit()
             .putBoolean("dark", dark).putInt("accent", accent).putBoolean("coverTint", coverTint)
             .putString("provider", provider).putString("discogs", discogsToken)
-            .putString("lastDir", lastDir).putString("musicDir", musicDir).putBoolean("folderView", folderView).putInt("coverMax", coverMax)
+            .putString("lastDir", lastDir).putString("musicDir", musicDir).putString("musicDirs", musicDirs.joinToString("\n"))
+            .putString("excludedDirs", excludedDirs.joinToString("\n")).putString("extraRoots", extraRoots.joinToString("\n")).putBoolean("folderView", folderView).putInt("coverMax", coverMax)
             .apply()
     }
 
