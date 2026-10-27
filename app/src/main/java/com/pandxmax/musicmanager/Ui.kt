@@ -20,6 +20,11 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.em
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -41,6 +46,30 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Altura de línea proporcional al tamaño de letra: así los textos grandes (o con la letra del teléfono agrandada)
+ * no se montan unos sobre otros.
+ */
+private fun TextStyle.airy(k: Float) = copy(
+    lineHeight = k.em,
+    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+)
+
+private val AppTypography = Typography().run {
+    copy(
+        displayLarge = displayLarge.airy(1.15f), displayMedium = displayMedium.airy(1.15f), displaySmall = displaySmall.airy(1.2f),
+        headlineLarge = headlineLarge.airy(1.22f), headlineMedium = headlineMedium.airy(1.22f), headlineSmall = headlineSmall.airy(1.25f),
+        titleLarge = titleLarge.airy(1.28f), titleMedium = titleMedium.airy(1.32f), titleSmall = titleSmall.airy(1.32f),
+        bodyLarge = bodyLarge.airy(1.38f), bodyMedium = bodyMedium.airy(1.38f), bodySmall = bodySmall.airy(1.38f),
+        labelLarge = labelLarge.airy(1.3f), labelMedium = labelMedium.airy(1.3f), labelSmall = labelSmall.airy(1.3f),
+    )
+}
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp), small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(20.dp), extraLarge = RoundedCornerShape(28.dp)
+)
+
 @Composable
 fun MMTheme(content: @Composable () -> Unit) {
     val accent = Color(Store.dynamicAccent ?: Store.accent)
@@ -61,7 +90,7 @@ fun MMTheme(content: @Composable () -> Unit) {
             outline = Color(0xFFCFCFDD)
         )
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, typography = AppTypography, shapes = AppShapes, content = content)
 }
 
 /** Iconos dibujados (siguen el tema y el color) en lugar de emojis, como en el programa de Windows. */

@@ -93,6 +93,7 @@ object QualityCache {
     private fun key(f: File) = "${f.absolutePath}|${f.lastModified()}|${f.length()}"
 
     fun peek(f: File): Quality? = mem[key(f)]
+    fun put(f: File, q: Quality) { mem[key(f)] = q }
 
     /** Lee solo la cabecera del archivo (rápido). Llamar fuera del hilo principal. */
     fun get(f: File): Quality {

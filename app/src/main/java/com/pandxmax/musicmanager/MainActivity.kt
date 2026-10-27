@@ -70,7 +70,7 @@ fun Root() {
         while (true) {
             if (!hasAccess) hasAccess = Environment.isExternalStorageManager()
             if (PlayerManager.isPlaying) PlayerManager.tick()
-            delay(if (hasAccess) 500 else 700)
+            delay(if (!hasAccess) 700 else if (Nav.stack.lastOrNull() is Screen.Player) 200 else 500)
         }
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -126,31 +126,5 @@ fun PermissionScreen() {
                 ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
             }
         }) { Text("Dar permiso") }
-    }
-}
-
-@Composable
-fun MiniPlayer() {
-    val path = PlayerManager.currentPath ?: return
-    val name = File(path).nameWithoutExtension
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
-        Column {
-            val frac = if (PlayerManager.duration > 0) PlayerManager.position.toFloat() / PlayerManager.duration else 0f
-            LinearProgressIndicator(progress = { frac.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(2.dp))
-            Row(
-                Modifier.fillMaxWidth().clickable { Nav.push(Screen.Player) }.padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CoverThumb(path, 96, Modifier.size(44.dp))
-                Text(
-                    name, Modifier.weight(1f).padding(horizontal = 10.dp), maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, fontSize = 14.sp
-                )
-                IconBtn("✏") { Nav.push(Screen.Editor(listOf(path))) }
-                IconBtn("⏮") { PlayerManager.prev() }
-                IconBtn(if (PlayerManager.isPlaying) "⏸" else "▶", accent = true) { PlayerManager.toggle() }
-                IconBtn("⏭") { PlayerManager.next() }
-            }
-        }
     }
 }
