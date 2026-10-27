@@ -210,16 +210,8 @@ fun PlayerScreen() {
     val mid by animateColorAsState(cols.second.dim(0.55f), tween(700), label = "mid")
     val bgBase = Color(0xFF0E0E14)
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(top, mid, bgBase), endY = 2400f))) {
-        // un toque de la portada difuminada arriba, muy suave
-        if (Build.VERSION.SDK_INT >= 31) Crossfade(cover, animationSpec = tween(700), label = "fondo") { b ->
-            if (b != null) Image(
-                b.asImageBitmap(), null, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().fillMaxHeight(0.55f).graphicsLayer { alpha = 0.22f }.blur(80.dp)
-            )
-        }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, bgBase.copy(alpha = 0.6f), bgBase))))
-
+    // fondo: degradado suave con los colores de la portada (cambia con una transición lenta)
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to top, 0.45f to mid, 1f to bgBase))) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             // barra superior
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -500,11 +492,12 @@ fun QueueScreen() {
                     val meta by produceState(SongMeta(File(p).nameWithoutExtension, "", ""), p) { value = withContext(Dispatchers.IO) { songMeta(p) } }
                     Row(
                         Modifier.fillMaxWidth().height(72.dp)
+                            .background(MaterialTheme.colorScheme.background)
                             .background(
                                 when {
                                     dragging -> MaterialTheme.colorScheme.surfaceVariant
                                     isCur -> accent.copy(alpha = 0.16f)
-                                    else -> MaterialTheme.colorScheme.background
+                                    else -> Color.Transparent
                                 }
                             )
                             .clickable { PlayerManager.playIndex(i) }

@@ -121,7 +121,7 @@ private data class Node(val path: String, val depth: Int)
 fun LocationScreen() {
     val ctx = LocalContext.current
     val accent = MaterialTheme.colorScheme.primary
-    var hasAccess by remember { mutableStateOf(Environment.isExternalStorageManager()) }
+    var hasAccess by remember { mutableStateOf(hasAllFiles()) }
     var tree by remember { mutableStateOf<MusicTree?>(null) }
     var extra by remember { mutableStateOf(Store.extraRoots) }
     val inc = remember { mutableStateListOf<String>().apply { addAll(Store.musicDirs) } }
@@ -129,7 +129,7 @@ fun LocationScreen() {
     val open = remember { mutableStateListOf<String>() }
     var msg by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) { while (!hasAccess) { delay(700); hasAccess = Environment.isExternalStorageManager() } }
+    LaunchedEffect(Unit) { while (!hasAccess) { delay(700); hasAccess = hasAllFiles() } }
     LaunchedEffect(hasAccess, extra) { tree = withContext(Dispatchers.IO) { buildTree(ctx, extra + Store.musicDirs) } }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -292,3 +292,6 @@ fun LocationScreen() {
         }
     }
 }
+
+/** ¿Tiene el permiso «Acceso a todos los archivos»? (sin fallar en equipos raros) */
+fun hasAllFiles(): Boolean = try { Environment.isExternalStorageManager() } catch (_: Throwable) { false }
