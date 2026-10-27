@@ -41,6 +41,11 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.07** — Aleatorio y repetir ahora se ven activados (relleno de color, punto debajo y texto «Aleatorio · Repetir todo»);
+  antes la app no se enteraba del cambio. Cola de reproducción rediseñada («Sonando ahora» con barras animadas,
+  «A continuación» y «Ya sonaron», con título y artista). Al abrir la app por primera vez lo primero es elegir la carpeta
+  de la música. Animación al cambiar de canción: la portada se desliza de costado como una ventanita (también en el mini
+  reproductor) y el fondo cambia suavemente.
 - **1.06** — Arreglada la descarga de YouTube («Please sign in» / «Precondition check failed»): el componente de descargas
   (yt-dlp) ahora se actualiza solo desde GitHub antes de descargar; si YouTube rechaza la petición se prueban otras formas
   de conexión y, como último recurso, la versión más nueva (nightly). Los errores se explican en lenguaje claro (con los
