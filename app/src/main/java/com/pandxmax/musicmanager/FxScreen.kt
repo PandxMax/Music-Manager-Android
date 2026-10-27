@@ -213,8 +213,8 @@ fun FxScreen(path: String) {
                 if (busy) LinearProgressIndicator(progress = { progress / 100f }, Modifier.fillMaxWidth().padding(bottom = 6.dp))
                 if (status.isNotEmpty()) Text(status, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(enabled = !busy, onClick = { preview() }, modifier = Modifier.weight(1f)) { Text("▶ Escuchar 30 s", maxLines = 1) }
-                    OutlinedButton(enabled = previewing, onClick = { stopPreview(); status = "" }, modifier = Modifier.weight(1f)) { Text("Parar", maxLines = 1) }
+                    OutlinedButton(enabled = !busy, onClick = { preview() }, modifier = Modifier.weight(2f)) { Text("▶ Escuchar muestra", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    OutlinedButton(enabled = previewing, onClick = { stopPreview(); status = "" }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Parar", maxLines = 1) }
                 }
                 Button(enabled = !busy, onClick = { save(false) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("💾 Guardar como canción nueva") }
                 TextButton(enabled = !busy, onClick = { if (p.isDefault()) status = "No has cambiado nada todavía." else askReplace = true }, modifier = Modifier.fillMaxWidth()) {

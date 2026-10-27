@@ -41,6 +41,10 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.05** — Reproductor nuevo al estilo Poweramp: portada grande que se desliza para cambiar de canción, fondo con la portada
+  difuminada, barra de progreso gruesa, botones grandes, calidad del archivo, cola, letra sincronizada (LRC) y accesos a
+  Ajustes, Editar y Calidad; mini reproductor con título y artista. Diseño más limpio: los textos ya no se encimen ni se
+  aplastan (también con la letra del teléfono agrandada) y los botones de edición son iconos con nombre.
 - **1.04** — Se pasan a Android las novedades del programa de Windows (1.38–1.45): **Ajustes de la canción** (graves, medios,
   agudos, volumen, normalizar, tempo, tono, velocidad, recorte, bucle, al revés, eco, reverberación, ancho estéreo, mono,
   karaoke y fundidos, con muestra de 30 s y guardar como nueva o reemplazar); portadas y descargas de **SoundCloud**
