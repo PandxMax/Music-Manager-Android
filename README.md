@@ -41,6 +41,11 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.08** — Nueva «Selección de carpetas»: árbol con las carpetas que tienen música, ▶ para abrir subcarpetas, ✕ para
+  excluir y casilla para incluir (se pueden elegir varias), «Agregar carpeta o almacenamiento» y «Guardar y escanear».
+  Reproductor: las portadas van en un carrusel que sigue al dedo (la siguiente asoma al lado); fondo con un degradado
+  suave de los colores de la portada; botones más limpios (aleatorio/repetir de color con un punto cuando están activos).
+  Cola a pantalla completa: se reordena arrastrando ≡ y se quita una canción deslizándola hacia un lado.
 - **1.07** — Aleatorio y repetir ahora se ven activados (relleno de color, punto debajo y texto «Aleatorio · Repetir todo»);
   antes la app no se enteraba del cambio. Cola de reproducción rediseñada («Sonando ahora» con barras animadas,
   «A continuación» y «Ya sonaron», con título y artista). Al abrir la app por primera vez lo primero es elegir la carpeta
