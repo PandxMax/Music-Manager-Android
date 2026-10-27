@@ -15,12 +15,17 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Generar capturas
-        run: gradle testDebugUnitTest --tests '*Capturas*' -Proborazzi.test.record=true --no-daemon --stacktrace
+        shell: bash
+        run: |
+          mkdir -p app/build/capturas
+          set -o pipefail
+          gradle testDebugUnitTest --tests '*Capturas*' -Proborazzi.test.record=true --no-daemon 2>&1 | tee app/build/gradle.log
       - name: Informe si falla
         if: failure()
         run: |
           mkdir -p app/build/capturas
-          find app/build/test-results -name '*.xml' -exec cat {} + | grep -B2 -A30 '<failure' | head -150 > app/build/capturas/errores.txt || true
+          grep -E "^e: |error:|FAILED|Exception" app/build/gradle.log | head -80 > app/build/capturas/errores.txt || true
+          find app/build/test-results -name '*.xml' -exec cat {} + | grep -B2 -A30 '<failure' | head -150 >> app/build/capturas/errores.txt || true
           find app/build/reports -name '*.html' | head -3 >> app/build/capturas/errores.txt || true
       - name: Subir capturas a la rama «capturas»
         if: always()
