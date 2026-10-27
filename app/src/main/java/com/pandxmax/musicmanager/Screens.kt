@@ -161,6 +161,8 @@ fun YoutubeScreen() {
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     var log by remember { mutableStateOf("") }
+    var detail by remember { mutableStateOf("") }
+    var showDetail by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf<List<File>>(emptyList()) }
 
     Column(Modifier.fillMaxSize()) {
@@ -193,24 +195,30 @@ fun YoutubeScreen() {
                         return@Button
                     }
                     if (!d.isDirectory) { log = "Esa carpeta de destino no existe."; return@Button }
-                    running = true; progress = 0f; log = "Empezando… (la primera vez prepara los componentes, puede tardar)"; done = emptyList()
+                    running = true; progress = 0f; detail = ""; showDetail = false; log = "Empezando… (la primera vez prepara los componentes, puede tardar)"; done = emptyList()
                     scope.launch {
                         try {
                             val files = withContext(Dispatchers.IO) {
-                                Ytdl.download(ctx, url.trim(), d, kbps) { p, line -> progress = p; log = line }
+                                Ytdl.download(ctx, url.trim(), d, kbps, onStatus = { log = it }) { p, line -> progress = p; if (line.isNotBlank()) log = line }
                             }
                             done = files
                             log = if (files.isEmpty()) "Terminó, pero no encuentro el MP3 nuevo (quizá ya existía)." else "✔ Listo. Puedes editarle metadatos y portada."
                             Store.libVersion++; Lib.requestScan()
                         } catch (e: Throwable) {
-                            log = "No se pudo descargar: ${e.message}"
+                            detail = e.message ?: e.javaClass.simpleName
+                            log = Ytdl.friendly(detail)
+                            progress = 0f
                         }
                         running = false
                     }
                 }
             ) { Text("⬇ Descargar MP3") }
             if (running || progress > 0f) LinearProgressIndicator(progress = { (progress / 100f).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().padding(top = 10.dp))
-            if (log.isNotEmpty()) Text(log, Modifier.padding(top = 8.dp), fontSize = 12.sp)
+            if (log.isNotEmpty()) Text(log, Modifier.padding(top = 8.dp), fontSize = 13.sp)
+            if (detail.isNotEmpty()) {
+                TextButton(onClick = { showDetail = !showDetail }) { Text(if (showDetail) "Ocultar detalles técnicos" else "Ver detalles técnicos") }
+                if (showDetail) Text(detail.takeLast(1500), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             for (f in done) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(f.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
@@ -275,6 +283,23 @@ fun SettingsScreen() {
                 discogs, { discogs = it; Store.discogsToken = it.trim(); Store.save() }, label = { Text("Token de Discogs (opcional)") },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+
+            Text("⬇ Componente de descargas (yt-dlp)", Modifier.padding(top = 20.dp), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            var ytv by remember { mutableStateOf<String?>(null) }
+            var ytBusy by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { ytv = withContext(Dispatchers.IO) { Ytdl.version(ctx) } }
+            Text(
+                "Se actualiza solo antes de cada descarga, porque YouTube cambia a menudo. Versión instalada: ${ytv ?: "…"}",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)
+            )
+            OutlinedButton(enabled = !ytBusy, modifier = Modifier.padding(top = 6.dp), onClick = {
+                ytBusy = true
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) { Ytdl.update(ctx, force = true) }
+                    ytv = withContext(Dispatchers.IO) { Ytdl.version(ctx) } + "  ($r)"
+                    ytBusy = false
+                }
+            }) { Text(if (ytBusy) "Actualizando…" else "Actualizar ahora") }
 
             Text("🎨 Aspecto", Modifier.padding(top = 20.dp), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {

@@ -41,6 +41,10 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.06** — Arreglada la descarga de YouTube («Please sign in» / «Precondition check failed»): el componente de descargas
+  (yt-dlp) ahora se actualiza solo desde GitHub antes de descargar; si YouTube rechaza la petición se prueban otras formas
+  de conexión y, como último recurso, la versión más nueva (nightly). Los errores se explican en lenguaje claro (con los
+  detalles técnicos aparte), la portada del vídeo se incrusta en el MP3 y en Ajustes se puede ver y actualizar la versión.
 - **1.05** — Reproductor nuevo al estilo Poweramp: portada grande que se desliza para cambiar de canción, fondo con la portada
   difuminada, barra de progreso gruesa, botones grandes, calidad del archivo, cola, letra sincronizada (LRC) y accesos a
   Ajustes, Editar y Calidad; mini reproductor con título y artista. Diseño más limpio: los textos ya no se encimen ni se
