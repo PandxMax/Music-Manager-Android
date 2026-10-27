@@ -3,7 +3,24 @@ package com.pandxmax.musicmanager
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.os.Build
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -163,12 +180,6 @@ fun PlayerScreen() {
     val dur = PlayerManager.duration.toFloat().coerceAtLeast(1f)
     val pos = (drag ?: PlayerManager.position.toFloat()).coerceIn(0f, dur)
 
-    val meta by produceState(SongMeta("", "", ""), cur, Store.libVersion) {
-        value = if (cur == null) SongMeta("", "", "") else withContext(Dispatchers.IO) { songMeta(cur) }
-    }
-    val q by produceState<Quality?>(null, cur) {
-        value = cur?.let { p -> withContext(Dispatchers.IO) { QualityCache.get(File(p)) } }
-    }
     val cover by produceState<Bitmap?>(null, cur, Store.coverVersion) {
         value = cur?.let { p -> withContext(Dispatchers.IO) { Covers.thumb(p, 720) } }
     }
@@ -176,8 +187,8 @@ fun PlayerScreen() {
 
     Box(Modifier.fillMaxSize().background(Color(0xFF0E0E14))) {
         // Fondo: la portada difuminada y oscurecida
-        cover?.let { b ->
-            Image(
+        Crossfade(cover, animationSpec = tween(600), label = "fondo") { b ->
+            if (b != null) Image(
                 b.asImageBitmap(), null, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f }
                     .then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(60.dp) else Modifier)
@@ -220,61 +231,17 @@ fun PlayerScreen() {
             }
 
             Spacer(Modifier.weight(0.6f))
-            // portada grande; se desliza a los lados para cambiar de canción
-            var dragX by remember { mutableFloatStateOf(0f) }
-            val shift by animateFloatAsState(dragX, label = "shift")
-            Box(
-                Modifier.fillMaxWidth().aspectRatio(1f)
-                    .graphicsLayer { translationX = shift; rotationZ = shift / 60f }
-                    .shadow(24.dp, RoundedCornerShape(22.dp))
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color(0xFF22222E))
-                    .pointerInput(cur) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (dragX < -160) PlayerManager.next() else if (dragX > 160) PlayerManager.prev()
-                                dragX = 0f
-                            },
-                            onDragCancel = { dragX = 0f },
-                            onHorizontalDrag = { ch, dx -> ch.consume(); dragX += dx }
-                        )
-                    }
-                    .pointerInput(cur) { detectTapGestures(onDoubleTap = { PlayerManager.toggle() }) },
-                contentAlignment = Alignment.Center
-            ) {
-                val b = cover
-                if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                else Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(96.dp))
-            }
-
-            Spacer(Modifier.height(22.dp))
-            // título, artista, álbum
-            Text(
-                meta.title, Modifier.fillMaxWidth().basicMarquee(), fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                color = Color.White, maxLines = 1, textAlign = TextAlign.Center
-            )
-            Text(
-                meta.artist.ifBlank { "Artista desconocido" }, Modifier.fillMaxWidth().padding(top = 4.dp), fontSize = 16.sp,
-                color = accent.copy(alpha = 0.95f), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center
-            )
-            if (meta.album.isNotBlank()) Text(
-                meta.album, Modifier.fillMaxWidth().padding(top = 2.dp), fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f),
-                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center
-            )
-            q?.let { qq ->
-                Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        qq.format, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                        modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                    if (qq.detail.isNotEmpty()) Text(qq.detail, Modifier.padding(horizontal = 8.dp), fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
-                    if (qq.level < 5) Text(
-                        qualityLabel(qq.level), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = qualityColor(qq.level),
-                        modifier = Modifier.clip(RoundedCornerShape(50)).background(qualityColor(qq.level).copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
+            // portada + datos: al cambiar de canción se deslizan de costado como una ventanita
+            AnimatedContent(
+                targetState = cur,
+                transitionSpec = {
+                    val d = PlayerManager.navDir
+                    (slideInHorizontally(tween(380)) { w -> d * w } + fadeIn(tween(300)) + scaleIn(tween(380), initialScale = 0.92f)) togetherWith
+                        (slideOutHorizontally(tween(380)) { w -> -d * w } + fadeOut(tween(250)) + scaleOut(tween(380), targetScale = 0.92f)) using
+                        SizeTransform(clip = false)
+                },
+                label = "cancion"
+            ) { path -> SongCard(path, accent) }
             Spacer(Modifier.height(14.dp))
             SeekBar(pos, dur, accent, onSeek = { PlayerManager.seek(it.toLong()); PlayerManager.position = it.toLong() }, onDrag = { drag = it })
             Row(Modifier.fillMaxWidth()) {
@@ -283,16 +250,21 @@ fun PlayerScreen() {
                 Text("-" + fmtTime((dur - pos).toLong()), fontSize = 12.sp, color = Color.White.copy(alpha = 0.75f))
             }
 
+            // estado de aleatorio / repetir en palabras, para que se note
+            Text(
+                listOfNotNull(
+                    if (PlayerManager.shuffle) "Aleatorio" else null,
+                    when (PlayerManager.repeat) { 1 -> "Repetir todo"; 2 -> "Repetir una"; else -> null }
+                ).joinToString("  ·  ").ifEmpty { " " },
+                fontSize = 11.sp, color = accent, modifier = Modifier.padding(top = 2.dp)
+            )
             // controles
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                RoundCtl(Icons.Filled.Shuffle, 46, if (PlayerManager.shuffle) accent else Color.White.copy(alpha = 0.6f)) { PlayerManager.toggleShuffle() }
+                ToggleCtl(Icons.Filled.Shuffle, PlayerManager.shuffle, accent) { PlayerManager.toggleShuffle() }
                 RoundCtl(Icons.Filled.SkipPrevious, 60, Color.White) { PlayerManager.prev() }
                 RoundCtl(if (PlayerManager.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, 78, Color.White, accent) { PlayerManager.toggle() }
                 RoundCtl(Icons.Filled.SkipNext, 60, Color.White) { PlayerManager.next() }
-                RoundCtl(
-                    if (PlayerManager.repeat == 2) Icons.Filled.RepeatOne else Icons.Filled.Repeat, 46,
-                    if (PlayerManager.repeat != 0) accent else Color.White.copy(alpha = 0.6f)
-                ) { PlayerManager.cycleRepeat() }
+                ToggleCtl(if (PlayerManager.repeat == 2) Icons.Filled.RepeatOne else Icons.Filled.Repeat, PlayerManager.repeat != 0, accent) { PlayerManager.cycleRepeat() }
             }
             Spacer(Modifier.weight(0.5f))
             // acciones de abajo
@@ -325,34 +297,183 @@ fun PlayerScreen() {
     }
 }
 
+/** Botón de aleatorio / repetir: cuando está activo se ve relleno, de color y con un punto debajo. */
 @Composable
-private fun QueueSheet() {
-    val cur = PlayerManager.currentPath
-    val queue = PlayerManager.queue
-    val st = rememberLazyListState(initialFirstVisibleItemIndex = (queue.indexOf(cur) - 2).coerceAtLeast(0))
-    Column(Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
-        Text("Cola · ${queue.size} canciones", Modifier.padding(horizontal = 18.dp, vertical = 6.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
-        LazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
-            itemsIndexed(queue, key = { i, p -> "$i|$p" }) { i, p ->
-                val isCur = p == cur
-                Row(
-                    Modifier.fillMaxWidth()
-                        .background(if (isCur) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent)
-                        .clickable { PlayerManager.playIndex(i) }.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CoverThumb(p, 96, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
-                    Text(
-                        File(p).nameWithoutExtension, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, fontSize = 14.sp,
-                        fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isCur) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+private fun ToggleCtl(icon: ImageVector, on: Boolean, accent: Color, onClick: () -> Unit) {
+    val bg by animateColorAsState(if (on) accent.copy(alpha = 0.25f) else Color.Transparent, label = "bg")
+    val fg by animateColorAsState(if (on) accent else Color.White.copy(alpha = 0.55f), label = "fg")
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).background(bg)
+                .then(if (on) Modifier.border(1.5.dp, accent.copy(alpha = 0.7f), CircleShape) else Modifier)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) { Icon(icon, null, tint = fg, modifier = Modifier.size(24.dp)) }
+        Box(Modifier.padding(top = 4.dp).size(5.dp).clip(CircleShape).background(if (on) accent else Color.Transparent))
+    }
+}
+
+/** Portada grande (se desliza para cambiar de canción) con título, artista, álbum y calidad. */
+@Composable
+private fun SongCard(path: String, accent: Color) {
+    val meta by produceState(SongMeta(File(path).nameWithoutExtension, "", ""), path, Store.libVersion) { value = withContext(Dispatchers.IO) { songMeta(path) } }
+    val q by produceState(QualityCache.peek(File(path)), path) { if (value == null) value = withContext(Dispatchers.IO) { QualityCache.get(File(path)) } }
+    val cover by produceState<Bitmap?>(null, path, Store.coverVersion) { value = withContext(Dispatchers.IO) { Covers.thumb(path, 720) } }
+    var dragX by remember { mutableFloatStateOf(0f) }
+    val shift by animateFloatAsState(dragX, label = "shift")
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1f)
+                .graphicsLayer { translationX = shift; rotationZ = shift / 60f }
+                .shadow(24.dp, RoundedCornerShape(22.dp))
+                .clip(RoundedCornerShape(22.dp))
+                .background(Color(0xFF22222E))
+                .pointerInput(path) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (dragX < -160) PlayerManager.next() else if (dragX > 160) PlayerManager.prev()
+                            dragX = 0f
+                        },
+                        onDragCancel = { dragX = 0f },
+                        onHorizontalDrag = { ch, dx -> ch.consume(); dragX += dx }
                     )
-                    IconBtn("✕") { PlayerManager.removeAt(i) }
                 }
+                .pointerInput(path) { detectTapGestures(onDoubleTap = { PlayerManager.toggle() }) },
+            contentAlignment = Alignment.Center
+        ) {
+            val b = cover
+            if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(96.dp))
+        }
+        Spacer(Modifier.height(22.dp))
+        Text(
+            meta.title, Modifier.fillMaxWidth().basicMarquee(), fontSize = 22.sp, fontWeight = FontWeight.Bold,
+            color = Color.White, maxLines = 1, textAlign = TextAlign.Center
+        )
+        Text(
+            meta.artist.ifBlank { "Artista desconocido" }, Modifier.fillMaxWidth().padding(top = 4.dp), fontSize = 16.sp,
+            color = accent, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center
+        )
+        Text(
+            meta.album.ifBlank { " " }, Modifier.fillMaxWidth().padding(top = 2.dp), fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f),
+            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center
+        )
+        Row(Modifier.padding(top = 10.dp).height(22.dp), verticalAlignment = Alignment.CenterVertically) {
+            q?.let { qq ->
+                Text(
+                    qq.format, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                    modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+                if (qq.detail.isNotEmpty()) Text(qq.detail, Modifier.padding(horizontal = 8.dp), fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
+                if (qq.level < 5) Text(
+                    qualityLabel(qq.level), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = qualityColor(qq.level),
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(qualityColor(qq.level).copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp)
+                )
             }
         }
     }
+}
+
+/** Barras animadas de «sonando ahora». */
+@Composable
+private fun PlayingBars(color: Color, playing: Boolean) {
+    val t = rememberInfiniteTransition(label = "bars")
+    val a by t.animateFloat(0.3f, 1f, infiniteRepeatable(tween(420), RepeatMode.Reverse), label = "a")
+    val b by t.animateFloat(1f, 0.25f, infiniteRepeatable(tween(560), RepeatMode.Reverse), label = "b")
+    val c by t.animateFloat(0.5f, 0.9f, infiniteRepeatable(tween(350), RepeatMode.Reverse), label = "c")
+    Canvas(Modifier.size(18.dp)) {
+        val hs = if (playing) listOf(a, b, c) else listOf(0.35f, 0.35f, 0.35f)
+        val bw = size.width / 5
+        hs.forEachIndexed { i, h ->
+            val bh = size.height * h
+            drawRoundRect(color, Offset(i * bw * 2, size.height - bh), Size(bw, bh), CornerRadius(bw / 2))
+        }
+    }
+}
+
+@Composable
+private fun QueueRow(num: Int, path: String, dim: Boolean, onPlay: () -> Unit, onRemove: () -> Unit) {
+    val meta by produceState(SongMeta(File(path).nameWithoutExtension, "", ""), path) { value = withContext(Dispatchers.IO) { songMeta(path) } }
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onPlay).padding(horizontal = 16.dp, vertical = 6.dp)
+            .graphicsLayer { alpha = if (dim) 0.5f else 1f },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("$num", Modifier.width(30.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        CoverThumb(path, 96, Modifier.size(46.dp).clip(RoundedCornerShape(10.dp)))
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(meta.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            if (meta.artist.isNotBlank()) Text(meta.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box(Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onRemove), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Close, "Quitar de la cola", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+fun QueueSheet() {
+    val cur = PlayerManager.currentPath
+    val queue = PlayerManager.queue
+    val accent = MaterialTheme.colorScheme.primary
+    val ci = queue.indexOf(cur)
+    val next = if (ci >= 0) queue.drop(ci + 1) else queue
+    val before = if (ci > 0) queue.take(ci) else emptyList()
+    Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Cola de reproducción", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                Text(
+                    plural(queue.size, "canción", "canciones") + (if (PlayerManager.shuffle) " · aleatorio" else "") +
+                        when (PlayerManager.repeat) { 1 -> " · repetir todo"; 2 -> " · repetir una"; else -> "" },
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            ToggleSmall(Icons.Filled.Shuffle, PlayerManager.shuffle, accent) { PlayerManager.toggleShuffle() }
+            ToggleSmall(if (PlayerManager.repeat == 2) Icons.Filled.RepeatOne else Icons.Filled.Repeat, PlayerManager.repeat != 0, accent) { PlayerManager.cycleRepeat() }
+        }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+            if (cur != null) item(key = "now") {
+                val meta by produceState(SongMeta(File(cur).nameWithoutExtension, "", ""), cur) { value = withContext(Dispatchers.IO) { songMeta(cur) } }
+                Text("SONANDO AHORA", Modifier.padding(start = 18.dp, top = 10.dp, bottom = 6.dp), fontSize = 11.sp, letterSpacing = 1.2.sp, color = accent, fontWeight = FontWeight.Bold)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(16.dp))
+                        .background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.28f), accent.copy(alpha = 0.08f))))
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CoverThumb(cur, 128, Modifier.size(58.dp).clip(RoundedCornerShape(12.dp)))
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(meta.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        if (meta.artist.isNotBlank()) Text(meta.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = accent)
+                    }
+                    PlayingBars(accent, PlayerManager.isPlaying)
+                    Spacer(Modifier.width(6.dp))
+                }
+            }
+            if (next.isNotEmpty()) item(key = "nextH") {
+                Text("A CONTINUACIÓN", Modifier.padding(start = 18.dp, top = 16.dp, bottom = 4.dp), fontSize = 11.sp, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            }
+            itemsIndexed(next, key = { i, p -> "n$i|$p" }) { i, p ->
+                val qi = ci + 1 + i
+                QueueRow(i + 1, p, false, { PlayerManager.playIndex(qi) }, { PlayerManager.removeAt(qi) })
+            }
+            if (before.isNotEmpty()) item(key = "prevH") {
+                Text("YA SONARON", Modifier.padding(start = 18.dp, top = 16.dp, bottom = 4.dp), fontSize = 11.sp, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            }
+            itemsIndexed(before, key = { i, p -> "b$i|$p" }) { i, p ->
+                QueueRow(i + 1, p, true, { PlayerManager.playIndex(i) }, { PlayerManager.removeAt(i) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToggleSmall(icon: ImageVector, on: Boolean, accent: Color, onClick: () -> Unit) {
+    Box(
+        Modifier.padding(start = 6.dp).size(40.dp).clip(CircleShape).background(if (on) accent.copy(alpha = 0.22f) else Color.Transparent).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Icon(icon, null, tint = if (on) accent else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)) }
 }
 
 @Composable
@@ -414,7 +535,6 @@ private fun ListsSheet(onClose: () -> Unit) {
 @Composable
 fun MiniPlayer() {
     val path = PlayerManager.currentPath ?: return
-    val meta by produceState(SongMeta(File(path).nameWithoutExtension, "", ""), path) { value = withContext(Dispatchers.IO) { songMeta(path) } }
     val accent = MaterialTheme.colorScheme.primary
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 6.dp, shadowElevation = 8.dp) {
         Column {
@@ -426,10 +546,22 @@ fun MiniPlayer() {
                 Modifier.fillMaxWidth().clickable { Nav.push(Screen.Player) }.padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CoverThumb(path, 128, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)))
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(meta.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    if (meta.artist.isNotBlank()) Text(meta.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AnimatedContent(
+                    targetState = path, modifier = Modifier.weight(1f),
+                    transitionSpec = {
+                        val d = PlayerManager.navDir
+                        (slideInHorizontally(tween(320)) { w -> d * w / 2 } + fadeIn(tween(260))) togetherWith
+                            (slideOutHorizontally(tween(320)) { w -> -d * w / 2 } + fadeOut(tween(200)))
+                    }, label = "mini"
+                ) { p ->
+                    val m by produceState(SongMeta(File(p).nameWithoutExtension, "", ""), p) { value = withContext(Dispatchers.IO) { songMeta(p) } }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CoverThumb(p, 128, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)))
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(m.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            if (m.artist.isNotBlank()) Text(m.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
                 RoundCtl(Icons.Filled.SkipPrevious, 42, MaterialTheme.colorScheme.onSurface) { PlayerManager.prev() }
                 RoundCtl(if (PlayerManager.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, 48, Color.White, accent) { PlayerManager.toggle() }

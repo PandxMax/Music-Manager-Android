@@ -54,9 +54,15 @@ object PlayerManager {
         val c = controller ?: return
         c.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { sync() }
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { sync(); tint() }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // si cambió sola (terminó la canción), la animación va hacia adelante
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) navDir = 1
+                sync(); tint()
+            }
             override fun onPlaybackStateChanged(playbackState: Int) { sync() }
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) { sync() }
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { sync() }
+            override fun onRepeatModeChanged(repeatMode: Int) { sync() }
         })
         sync()
         pending?.let { pending = null; it(c) }
@@ -147,15 +153,22 @@ object PlayerManager {
         }
     }
 
-    fun playIndex(i: Int) { controller?.let { it.seekTo(i, 0L); it.play() } }
+    /** Hacia dónde se mueve la canción en la animación: 1 = siguiente (entra por la derecha), -1 = anterior. */
+    var navDir by mutableStateOf(1)
+
+    fun playIndex(i: Int) {
+        controller?.let { navDir = if (i >= it.currentMediaItemIndex) 1 else -1; it.seekTo(i, 0L); it.play() }
+    }
     fun removeAt(i: Int) { controller?.removeMediaItem(i) }
     fun clear() { controller?.let { it.stop(); it.clearMediaItems() } }
     fun toggle() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
-    fun next() { controller?.seekToNext() }
-    fun prev() { controller?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPrevious() } }
+    fun next() { navDir = 1; controller?.seekToNext() }
+    fun prev() { navDir = -1; controller?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPrevious() } }
     fun stop() { controller?.let { it.stop(); it.seekTo(0, 0L) } }
     fun seek(ms: Long) { controller?.seekTo(ms) }
-    fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
+    fun toggleShuffle() {
+        controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; shuffle = it.shuffleModeEnabled }
+    }
     fun cycleRepeat() {
         controller?.let {
             it.repeatMode = when (it.repeatMode) {
@@ -163,6 +176,7 @@ object PlayerManager {
                 Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
                 else -> Player.REPEAT_MODE_OFF
             }
+            repeat = when (it.repeatMode) { Player.REPEAT_MODE_ALL -> 1; Player.REPEAT_MODE_ONE -> 2; else -> 0 }
         }
     }
 }

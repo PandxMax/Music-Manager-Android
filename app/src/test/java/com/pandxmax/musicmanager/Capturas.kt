@@ -75,6 +75,8 @@ class Capturas {
         PlayerManager.duration = 245_000
         PlayerManager.position = 83_000
         PlayerManager.isPlaying = true
+        PlayerManager.shuffle = false
+        PlayerManager.repeat = 0
     }
 
     private fun shot(name: String, scale: Float = 1f, content: @Composable () -> Unit) {
@@ -101,6 +103,8 @@ class Capturas {
     @Test fun a2_canciones() { Store.folderView = false; shot("02_canciones") { WithMini { LibraryScreen() } } }
     @Test fun a3_carpetas() { Store.folderView = true; shot("03_carpetas") { WithMini { LibraryScreen() } } }
     @Test fun a4_reproductor() { shot("04_reproductor") { PlayerScreen() } }
+    @Test fun a4b_reproductor_aleatorio() { PlayerManager.shuffle = true; PlayerManager.repeat = 1; shot("04b_reproductor_aleatorio_repetir") { PlayerScreen() } }
+    @Test fun a4c_cola() { PlayerManager.currentPath = songs[2].absolutePath; shot("04c_cola") { QueueSheet() } }
     @Test fun a5_editor() { shot("05_editor") { EditorScreen(listOf(songs[0].absolutePath)) } }
     @Test fun a6_ajustes_cancion() { shot("06_ajustes_cancion") { FxScreen(songs[0].absolutePath) } }
     @Test fun a7_ajustes() { shot("07_ajustes") { SettingsScreen() } }

@@ -74,10 +74,11 @@ fun Root() {
         }
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        if (!hasAccess) {
-            PermissionScreen()
-        } else if (Store.musicDir.isEmpty() || Store.choosingDir) {
+        // Lo primero que se pide es la carpeta de la música; después, el permiso para poder editarla
+        if (Store.musicDir.isEmpty() || Store.choosingDir) {
             Box(Modifier.fillMaxSize().systemBarsPadding()) { LocationScreen() }
+        } else if (!hasAccess) {
+            Box(Modifier.fillMaxSize().systemBarsPadding()) { PermissionScreen() }
         } else {
             val top = Nav.stack.last()
             BackHandler(enabled = Nav.stack.size > 1) { Nav.pop() }
@@ -114,8 +115,8 @@ fun PermissionScreen() {
         Text("Music Manager", fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Text(
-            "Para organizar tu música (mover carpetas, editar etiquetas y portadas dentro de los archivos) " +
-                "necesito el permiso «Acceso a todos los archivos».\n\nPulsa el botón y activa el interruptor de Music Manager.",
+            "Un paso más: para editar etiquetas y portadas dentro de tus canciones necesito el permiso " +
+                "«Acceso a todos los archivos».\n\nPulsa el botón y activa el interruptor de Music Manager.",
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(20.dp))
@@ -126,5 +127,6 @@ fun PermissionScreen() {
                 ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
             }
         }) { Text("Dar permiso") }
+        TextButton(onClick = { Store.choosingDir = true }) { Text("Cambiar la carpeta de música") }
     }
 }
