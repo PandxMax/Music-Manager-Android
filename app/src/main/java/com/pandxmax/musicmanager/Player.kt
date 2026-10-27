@@ -188,7 +188,7 @@ private fun coverColors(b: Bitmap?): Pair<Color, Color> {
 
 private fun Color.dim(k: Float) = lerp(this, Color.Black, k)
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen() {
     val cur = PlayerManager.currentPath
