@@ -48,7 +48,7 @@ private fun FxSlider(label: String, value: Float, range: ClosedFloatingPointRang
                 modifier = Modifier.clickable { onChange(default) }.padding(4.dp)
             )
         }
-        Slider(value = value, onValueChange = onChange, valueRange = range, steps = steps, modifier = Modifier.height(32.dp))
+        Slider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.height(36.dp))
     }
 }
 
@@ -213,8 +213,8 @@ fun FxScreen(path: String) {
                 if (busy) LinearProgressIndicator(progress = { progress / 100f }, Modifier.fillMaxWidth().padding(bottom = 6.dp))
                 if (status.isNotEmpty()) Text(status, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(enabled = !busy, onClick = { preview() }, modifier = Modifier.weight(1f)) { Text("▶ Escuchar 30 s") }
-                    OutlinedButton(enabled = previewing, onClick = { stopPreview(); status = "" }, modifier = Modifier.weight(1f)) { Text("⏹ Parar") }
+                    OutlinedButton(enabled = !busy, onClick = { preview() }, modifier = Modifier.weight(1f)) { Text("▶ Escuchar 30 s", maxLines = 1) }
+                    OutlinedButton(enabled = previewing, onClick = { stopPreview(); status = "" }, modifier = Modifier.weight(1f)) { Text("Parar", maxLines = 1) }
                 }
                 Button(enabled = !busy, onClick = { save(false) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("💾 Guardar como canción nueva") }
                 TextButton(enabled = !busy, onClick = { if (p.isDefault()) status = "No has cambiado nada todavía." else askReplace = true }, modifier = Modifier.fillMaxWidth()) {

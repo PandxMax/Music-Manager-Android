@@ -23,6 +23,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -433,43 +437,49 @@ fun LibraryScreen() {
         ) {
             FilterChip(
                 selected = !Store.folderView, onClick = { Store.folderView = false; openFolder = null; Store.save() },
-                label = { Text("🎵 Canciones") }
+                label = { Text("Canciones", maxLines = 1) },
+                leadingIcon = { Icon(Icons.Filled.MusicNote, null, Modifier.size(18.dp)) },
+                modifier = Modifier.weight(1f)
             )
             FilterChip(
                 selected = Store.folderView, onClick = { Store.folderView = true; Store.save() },
-                label = { Text("📁 Ver en carpetas") }
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                if (Lib.scanning) "Buscando… ${Lib.found}"
-                else if (Store.folderView) listOfNotNull(
-                    if (folders.isNotEmpty()) "${folders.size} carpetas" else null,
-                    if (shown.isNotEmpty() || folders.isEmpty()) "${shown.size} canciones" else null
-                ).joinToString(" · ")
-                else "${shown.size} canciones",
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                label = { Text("Carpetas", maxLines = 1) },
+                leadingIcon = { Icon(Icons.Filled.Folder, null, Modifier.size(18.dp)) },
+                modifier = Modifier.weight(1f)
             )
         }
+        val countText = if (Lib.scanning) "Buscando… ${Lib.found}"
+            else if (Store.folderView) listOfNotNull(
+                if (folders.isNotEmpty()) plural(folders.size, "carpeta", "carpetas") else null,
+                if (shown.isNotEmpty() || folders.isEmpty()) plural(shown.size, "canción", "canciones") else null
+            ).joinToString(" · ")
+            else plural(shown.size, "canción", "canciones")
         if (inFolder) {
             Row(
                 Modifier.fillMaxWidth().combinedClickable(onClick = { goUp() }).padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconBtn("←") { goUp() }
-                Column(Modifier.weight(1f)) {
-                    Text("📁 " + File(openFolder!!).name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(File(openFolder!!).name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        relPath(openFolder!!), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        relPath(openFolder!!) + "  ·  " + countText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         } else {
-            Text(
-                "📂 " + Store.musicDir + "  ·  cambiar", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().combinedClickable(onClick = { Store.choosingDir = true }).padding(horizontal = 14.dp, vertical = 4.dp)
-            )
+            Row(
+                Modifier.fillMaxWidth().combinedClickable(onClick = { Store.choosingDir = true }).padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.FolderOpen, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    File(Store.musicDir).name.ifEmpty { Store.musicDir }, Modifier.weight(1f).padding(start = 6.dp, end = 8.dp),
+                    fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(countText, fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         if (Lib.scanning) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
 
@@ -547,6 +557,8 @@ fun LibraryScreen() {
     }
 }
 
+fun plural(n: Int, one: String, many: String) = "$n " + if (n == 1) one else many
+
 private fun relPath(dir: String): String {
     val base = Store.musicDir.trimEnd('/')
     val r = dir.removePrefix(base).trimStart('/')
@@ -575,7 +587,7 @@ private fun FolderRow(dirPath: String, list: List<File>, onClick: () -> Unit) {
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(File(dirPath).name.ifEmpty { dirPath }, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "${list.size} canciones" + subInfo(dirPath, list), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                plural(list.size, "canción", "canciones") + subInfo(dirPath, list), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -603,12 +615,17 @@ private fun SongRow(f: File, sel: Boolean, playing: Boolean, onClick: () -> Unit
                 fontWeight = FontWeight.Medium, fontSize = 15.sp,
                 color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
             )
-            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 val qq = q
                 Text(
-                    qq?.format ?: f.extension.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    qq?.format ?: f.extension.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+                if (qq != null && qq.level < 5) Text(
+                    qualityLabel(qq.level), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = qualityColor(qq.level), maxLines = 1,
+                    modifier = Modifier.padding(start = 5.dp).clip(RoundedCornerShape(4.dp)).background(qualityColor(qq.level).copy(alpha = 0.15f))
                         .padding(horizontal = 5.dp, vertical = 1.dp)
                 )
                 Text(
@@ -616,13 +633,6 @@ private fun SongRow(f: File, sel: Boolean, playing: Boolean, onClick: () -> Unit
                     overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-        q?.let { qq ->
-            if (qq.level < 5) Text(
-                qualityLabel(qq.level), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = qualityColor(qq.level),
-                modifier = Modifier.clip(RoundedCornerShape(50)).background(qualityColor(qq.level).copy(alpha = 0.15f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            )
         }
     }
 }

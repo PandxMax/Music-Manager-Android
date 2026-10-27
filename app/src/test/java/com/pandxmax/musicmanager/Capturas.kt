@@ -105,6 +105,8 @@ class Capturas {
     @Test fun a6_ajustes_cancion() { shot("06_ajustes_cancion") { FxScreen(songs[0].absolutePath) } }
     @Test fun a7_ajustes() { shot("07_ajustes") { SettingsScreen() } }
     @Test fun b2_canciones_letra_grande() { Store.folderView = false; shot("12_canciones_letra_grande", 1.3f) { WithMini { LibraryScreen() } } }
+    @Test fun b3_carpetas_letra_grande() { Store.folderView = true; shot("13_carpetas_letra_grande", 1.3f) { WithMini { LibraryScreen() } } }
+    @Test fun b6_ajustes_cancion_letra_grande() { shot("16_ajustes_cancion_letra_grande", 1.3f) { FxScreen(songs[0].absolutePath) } }
     @Test fun b4_reproductor_letra_grande() { shot("14_reproductor_letra_grande", 1.3f) { PlayerScreen() } }
     @Test fun b5_editor_letra_grande() { shot("15_editor_letra_grande", 1.3f) { EditorScreen(listOf(songs[0].absolutePath)) } }
 }

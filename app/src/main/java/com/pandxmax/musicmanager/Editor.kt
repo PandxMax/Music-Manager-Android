@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -171,41 +173,29 @@ fun EditorScreen(paths: List<String>) {
             IconBtn("💾", enabled = dirty && !busy, accent = true) { save() }
         }
         Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
+            val paths0 = files.map { it.absolutePath }
+            val isThis = PlayerManager.currentPath != null && PlayerManager.currentPath in paths0
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                val paths0 = files.map { it.absolutePath }
-                val isThis = PlayerManager.currentPath != null && PlayerManager.currentPath in paths0
-                Button(
-                    onClick = {
-                        if (files.size == 1) PlayerManager.playOrToggle(paths0[0], Lib.songs.map { it.absolutePath })
-                        else if (isThis) PlayerManager.toggle() else PlayerManager.playList(paths0, 0)
-                    },
-                    modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
-                ) { Text(if (isThis && PlayerManager.isPlaying) "⏸  Pausar" else "▶  Reproducir", maxLines = 1) }
-                OutlinedButton(
-                    onClick = {
-                        Nav.push(Screen.Spectrum(files.map {
-                            SpecItem(Uri.fromFile(it), it.name, it.extension.lowercase() in setOf("flac", "wav", "aiff", "aif"))
-                        }))
-                    },
-                    modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
-                ) { Text("📊  Analizador de calidad", maxLines = 1, fontSize = 13.sp) }
+                ActionTile(
+                    if (isThis && PlayerManager.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    if (isThis && PlayerManager.isPlaying) "Pausar" else "Reproducir", primary = true, modifier = Modifier.weight(1f)
+                ) {
+                    if (files.size == 1) PlayerManager.playOrToggle(paths0[0], Lib.songs.map { it.absolutePath })
+                    else if (isThis) PlayerManager.toggle() else PlayerManager.playList(paths0, 0)
+                }
+                ActionTile(Icons.Filled.GraphicEq, "Analizador de calidad", modifier = Modifier.weight(1f)) {
+                    Nav.push(Screen.Spectrum(files.map {
+                        SpecItem(Uri.fromFile(it), it.name, it.extension.lowercase() in setOf("flac", "wav", "aiff", "aif"))
+                    }))
+                }
+                if (files.size == 1) ActionTile(Icons.Filled.Equalizer, "Ajustes de la canción", modifier = Modifier.weight(1f)) {
+                    Nav.push(Screen.Fx(files[0].absolutePath))
+                }
+                ActionTile(Icons.Filled.SwapHoriz, "Convertir formato", modifier = Modifier.weight(1f)) { showConvert = true }
             }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (files.size == 1) OutlinedButton(
-                onClick = { Nav.push(Screen.Fx(files[0].absolutePath)) },
-                modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
-            ) { Text("🎚  Ajustes de la canción", maxLines = 1, fontSize = 13.sp) }
-            OutlinedButton(
-                onClick = { showConvert = true },
-                modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)
-            ) { Text("🔄  Convertir formato", maxLines = 1, fontSize = 13.sp) }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -500,5 +490,22 @@ private fun NoKeyNotice(onDismiss: () -> Unit) {
             fontSize = 13.sp, color = MaterialTheme.colorScheme.error
         )
         Button(onClick = { onDismiss(); Nav.push(Screen.Settings) }, modifier = Modifier.padding(top = 6.dp)) { Text("⚙ Ir a poner la key") }
+    }
+}
+
+
+@Composable
+private fun ActionTile(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val bg = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (primary) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(bg).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, null, tint = fg, modifier = Modifier.size(24.dp))
+        Text(
+            label, color = fg, fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
