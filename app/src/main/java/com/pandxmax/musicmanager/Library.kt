@@ -534,7 +534,7 @@ fun LibraryScreen() {
             ).forEach { (t, ic, v) ->
                 FilterChip(
                     selected = view == v, onClick = { setView(v) }, label = { Text(t, maxLines = 1) },
-                    leadingIcon = { Icon(ic, null, Modifier.size(18.dp)) }
+                    leadingIcon = if (view == v) { { Icon(ic, null, Modifier.size(18.dp)) } } else null
                 )
             }
         }

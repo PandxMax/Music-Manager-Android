@@ -41,6 +41,16 @@ Requiere Android 11 o superior.
 > Descarga solo música o contenido que tengas derecho a guardar.
 
 ## Historial de versiones
+- **1.09** — Novedades del programa de Windows (1.46–2.31) adaptadas al celular. Biblioteca: vistas **Artistas** y **Géneros**,
+  «Reproducir esta carpeta / todo» (con aleatorio), búsqueda por artista, álbum o género, «Ir a la carpeta», y se recuerda
+  dónde estabas al volver del editor. Reproductor: **onda de la canción** en la barra de avance, **volumen** y estilo
+  **portada grande difuminada**. Letras: LRCLIB, NetEase y lyrics.ovh con reintentos y título limpio; «musica.com» y
+  «Pegar letra»; buscar y guardar la letra desde el reproductor. Editor: **copiar y pegar metadatos**, quitar paréntesis,
+  renombrar, «Buscar la canción en…», **recortar portadas no cuadradas**, Rellenar con fuentes (iTunes, Deezer, MusicBrainz,
+  Discogs, IA) con desplegable por campo y «Otro género». **Herramientas**: canciones repetidas, informe de la biblioteca,
+  organizar en carpetas, etiquetas desde el nombre, reparar recortes. Aviso de **FLAC falso** con «Convertir a MP3».
+  **Apoyar (Ko-fi)**, pantalla «Acerca de» con novedades, registro de errores y «Reportar un problema». Las descargas no
+  dejan archivos sueltos. El APK se crea solo al subir la versión.
 - **1.08** — Nueva «Selección de carpetas»: árbol con las carpetas que tienen música, ▶ para abrir subcarpetas, ✕ para
   excluir y casilla para incluir (se pueden elegir varias), «Agregar carpeta o almacenamiento» y «Guardar y escanear».
   Reproductor: las portadas van en un carrusel que sigue al dedo (la siguiente asoma al lado); fondo con un degradado

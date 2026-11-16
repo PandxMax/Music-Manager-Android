@@ -118,10 +118,8 @@ fun AboutScreen() {
                 }
             }
 
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { report = true }, modifier = Modifier.weight(1f)) { Text("Reportar un problema", maxLines = 1) }
-                OutlinedButton(onClick = { openUrl(ctx, "https://github.com/PandxMax/Music-Manager-Android") }, modifier = Modifier.weight(1f)) { Text("GitHub", maxLines = 1) }
-            }
+            OutlinedButton(onClick = { report = true }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("🐞  Reportar un problema") }
+            OutlinedButton(onClick = { openUrl(ctx, "https://github.com/PandxMax/Music-Manager-Android") }, modifier = Modifier.fillMaxWidth()) { Text("Ver el proyecto en GitHub") }
             TextButton(onClick = { showLog = !showLog }) { Text(if (showLog) "Ocultar registro de errores" else "Ver registro de errores") }
             if (showLog) {
                 val t = remember { ErrLog.text() }
