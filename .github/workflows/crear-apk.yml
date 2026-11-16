@@ -1,5 +1,10 @@
 name: Crear APK
-on: workflow_dispatch
+# Se crea solo cada vez que sube la versión (al cambiar app/build.gradle.kts); también se puede lanzar a mano.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['app/build.gradle.kts']
 permissions:
   contents: write
 jobs:
@@ -7,26 +12,44 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: Comprobar versión
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(grep -m1 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "push" ] && gh release view "v$V" -R "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "La versión $V ya está publicada: no hace falta crearla otra vez."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-java@v5
+        if: steps.ver.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: '17'
       - name: SDK de Android
+        if: steps.ver.outputs.skip != 'true'
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" > /dev/null
       - uses: gradle/actions/setup-gradle@v5
+        if: steps.ver.outputs.skip != 'true'
         with:
           gradle-version: '8.9'
       - name: Compilar APK
+        if: steps.ver.outputs.skip != 'true'
         run: gradle assembleRelease --no-daemon --stacktrace
       - name: Preparar APK
+        if: steps.ver.outputs.skip != 'true'
         run: cp app/build/outputs/apk/release/app-release.apk MusicManager-Android.apk
       - uses: actions/upload-artifact@v4
+        if: steps.ver.outputs.skip != 'true'
         with:
           name: MusicManager-Android
           path: MusicManager-Android.apk
       - name: Publicar versión
+        if: steps.ver.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

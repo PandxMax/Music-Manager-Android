@@ -67,6 +67,19 @@ class Capturas {
             Quality("MP3", "44.1 kHz · 128 kbps", 4), Quality("OPUS", "48 kHz · 160 kbps", 3)
         )
         songs.forEachIndexed { i, f -> QualityCache.put(f, qs[i]) }
+        val metas = listOf(
+            Meta("Tití Me Preguntó", "Bad Bunny", "Un Verano Sin Ti", "Reguetón", 245000, "2022"),
+            Meta("Me Porto Bonito", "Bad Bunny & Chencho Corleone", "Un Verano Sin Ti", "Reguetón", 178000, "2022"),
+            Meta("Ojitos Lindos", "Bad Bunny feat. Bomba Estéreo", "Un Verano Sin Ti", "Pop latino", 258000, "2022"),
+            Meta("Bohemian Rhapsody", "Queen", "A Night at the Opera", "Rock", 354000, "1975"),
+            Meta("Stairway to Heaven", "Led Zeppelin", "Led Zeppelin IV", "Rock", 482000, "1971"),
+            Meta("Hotel California", "Eagles", "Hotel California", "Rock", 391000, "1976"),
+            Meta("", "", "", "", 200000, ""),
+            Meta("Hips Don't Lie", "Shakira", "Oral Fixation Vol. 2", "Pop latino", 218000, "2006")
+        )
+        songs.forEachIndexed { i, f -> MetaCache.store(f, metas[i]) }
+        Store.libView = 0
+        Store.playerStyle = 0
         Store.setFolders(listOf(root.absolutePath), emptyList())
         Store.extraRoots = listOf(root.absolutePath)
         Lib.songs = songs.sortedBy { it.nameWithoutExtension.lowercase() }
@@ -101,16 +114,23 @@ class Capturas {
     }
 
     @Test fun a1_ubicacion() { shot("01_seleccion_carpetas") { LocationScreen() } }
-    @Test fun a2_canciones() { Store.folderView = false; shot("02_canciones") { WithMini { LibraryScreen() } } }
-    @Test fun a3_carpetas() { Store.folderView = true; shot("03_carpetas") { WithMini { LibraryScreen() } } }
+    @Test fun a2_canciones() { Store.libView = 0; shot("02_canciones") { WithMini { LibraryScreen() } } }
+    @Test fun a2b_artistas() { Store.libView = 2; shot("02b_artistas") { WithMini { LibraryScreen() } } }
+    @Test fun a2c_generos_dentro() { Store.libView = 3; LibNav.openGroup = "Rock"; shot("02c_genero_rock") { WithMini { LibraryScreen() } }; LibNav.openGroup = null }
+    @Test fun a3_carpetas() { Store.libView = 1; shot("03_carpetas") { WithMini { LibraryScreen() } } }
+    @Test fun a4d_portada_grande() { Store.playerStyle = 1; shot("04d_portada_grande") { PlayerScreen() } }
+    @Test fun a8_herramientas() { shot("08_herramientas") { ToolsScreen() } }
+    @Test fun a8b_organizar() { shot("08b_organizar") { ToolScreen("organizar") } }
+    @Test fun a8c_repetidas() { shot("08c_nombre") { ToolScreen("nombre") } }
+    @Test fun a9_acerca() { shot("09_acerca") { AboutScreen() } }
     @Test fun a4_reproductor() { shot("04_reproductor") { PlayerScreen() } }
     @Test fun a4b_reproductor_aleatorio() { PlayerManager.shuffle = true; PlayerManager.repeat = 1; shot("04b_reproductor_aleatorio_repetir") { PlayerScreen() } }
     @Test fun a4c_cola() { PlayerManager.currentPath = songs[2].absolutePath; shot("04c_cola") { QueueScreen() } }
     @Test fun a5_editor() { shot("05_editor") { EditorScreen(listOf(songs[0].absolutePath)) } }
     @Test fun a6_ajustes_cancion() { shot("06_ajustes_cancion") { FxScreen(songs[0].absolutePath) } }
     @Test fun a7_ajustes() { shot("07_ajustes") { SettingsScreen() } }
-    @Test fun b2_canciones_letra_grande() { Store.folderView = false; shot("12_canciones_letra_grande", 1.3f) { WithMini { LibraryScreen() } } }
-    @Test fun b3_carpetas_letra_grande() { Store.folderView = true; shot("13_carpetas_letra_grande", 1.3f) { WithMini { LibraryScreen() } } }
+    @Test fun b2_canciones_letra_grande() { Store.libView = 0; shot("12_canciones_letra_grande", 1.3f) { WithMini { LibraryScreen() } } }
+    @Test fun b3_carpetas_letra_grande() { Store.libView = 1; shot("13_carpetas_letra_grande", 1.3f) { WithMini { LibraryScreen() } } }
     @Test fun b6_ajustes_cancion_letra_grande() { shot("16_ajustes_cancion_letra_grande", 1.3f) { FxScreen(songs[0].absolutePath) } }
     @Test fun b4_reproductor_letra_grande() { shot("14_reproductor_letra_grande", 1.3f) { PlayerScreen() } }
     @Test fun b5_editor_letra_grande() { shot("15_editor_letra_grande", 1.3f) { EditorScreen(listOf(songs[0].absolutePath)) } }

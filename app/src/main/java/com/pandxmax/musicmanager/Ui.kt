@@ -102,7 +102,8 @@ private val ICONS: Map<String, ImageVector> = mapOf(
     "✏" to Icons.Filled.Edit, "✨" to Icons.Filled.AutoAwesome, "➕" to Icons.Filled.Add,
     "💾" to Icons.Filled.Save, "📊" to Icons.Filled.GraphicEq, "📚" to Icons.AutoMirrored.Filled.QueueMusic,
     "🔄" to Icons.Filled.SwapHoriz, "🔍" to Icons.Filled.Search, "🖼" to Icons.Filled.Image,
-    "🗑" to Icons.Filled.Delete,
+    "🗑" to Icons.Filled.Delete, "📂" to Icons.Filled.FolderOpen, "📋" to Icons.Filled.ContentPaste,
+    "📄" to Icons.Filled.ContentCopy, "🔎" to Icons.Filled.TravelExplore, "🔊" to Icons.Filled.VolumeUp,
 )
 
 @Composable

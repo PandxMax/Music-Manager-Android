@@ -85,6 +85,12 @@ object Ytdl {
         update(ctx)
         val yt = isYoutube(url)
         val before = dir.list()?.toSet() ?: emptySet()
+        // al terminar (bien o mal) no quedan archivos sueltos: audio original, .part, .ytdl, miniaturas…
+        fun cleanup(all: Boolean = false) {
+            try {
+                for (n in (dir.list()?.toSet() ?: emptySet()) - before) if (all || !n.lowercase().endsWith(".mp3")) File(dir, n).delete()
+            } catch (_: Throwable) {}
+        }
         var lastErr: Throwable? = null
         val attempts = if (yt) CLIENTS else listOf(null)
         var updatedNightly = false
@@ -109,6 +115,7 @@ object Ytdl {
             req.addOption("-o", dir.absolutePath + "/%(title)s.%(ext)s")
             try {
                 YoutubeDL.getInstance().execute(req) { progress, _, line -> onProgress(progress, line) }
+                cleanup()
                 val after = dir.list()?.toSet() ?: emptySet()
                 return (after - before).filter { it.lowercase().endsWith(".mp3") }.map { File(dir, it) }
             } catch (e: Throwable) {
@@ -125,6 +132,7 @@ object Ytdl {
             }
             i++
         }
+        cleanup(all = true)   // si falló, tampoco queda un MP3 a medias
         throw lastErr ?: RuntimeException("No se pudo descargar")
     }
 

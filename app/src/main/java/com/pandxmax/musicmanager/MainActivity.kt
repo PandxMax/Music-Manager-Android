@@ -37,6 +37,9 @@ sealed class Screen {
     object Youtube : Screen()
     class Fx(val path: String) : Screen()
     object Settings : Screen()
+    object About : Screen()
+    object Tools : Screen()
+    class Tool(val id: String) : Screen()
 }
 
 object Nav {
@@ -93,6 +96,9 @@ fun Root() {
                         is Screen.Spectrum -> SpectrumScreen(top.items)
                         is Screen.Youtube -> YoutubeScreen()
                         is Screen.Fx -> FxScreen(top.path)
+                        is Screen.About -> AboutScreen()
+                        is Screen.Tools -> ToolsScreen()
+                        is Screen.Tool -> ToolScreen(top.id)
                         is Screen.Settings -> SettingsScreen()
                     }
                 }

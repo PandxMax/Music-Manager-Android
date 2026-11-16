@@ -45,6 +45,10 @@ private sealed class EDlg {
     object Discogs : EDlg()
     object CoverSearch : EDlg()
     object CoverView : EDlg()
+    object PasteMeta : EDlg()
+    object Parens : EDlg()
+    object Rename : EDlg()
+    class Crop(val bytes: ByteArray) : EDlg()
 }
 
 fun openUrl(ctx: android.content.Context, url: String) {
@@ -75,6 +79,9 @@ fun EditorScreen(paths: List<String>) {
     var busy by remember { mutableStateOf(false) }
     var lyrBusy by remember { mutableStateOf(false) }
     var showConvert by remember { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
+    var showClip by remember { mutableStateOf(false) }
+    var searchMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(files) {
         withContext(Dispatchers.IO) {
@@ -115,6 +122,13 @@ fun EditorScreen(paths: List<String>) {
     }
 
     fun markEdited(id: String) { if (id !in edited) edited.add(id) }
+    /** Las portadas que no son cuadradas pasan primero por «recortar en cuadrado». */
+    fun setCover(b: ByteArray) {
+        val o = BitmapFactory.Options(); o.inJustDecodeBounds = true
+        BitmapFactory.decodeByteArray(b, 0, b.size, o)
+        if (o.outWidth > 0 && kotlin.math.abs(o.outWidth - o.outHeight) > 2) dlg = EDlg.Crop(b)
+        else { pendingCover = b; coverRemoved = false }
+    }
     fun applyVals(m: Map<String, String>) {
         for ((k, v) in m) if (v.isNotBlank() && FIELDS.any { it.first == k }) { values[k] = v; markEdited(k) }
     }
@@ -158,7 +172,7 @@ fun EditorScreen(paths: List<String>) {
                     ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { Covers.prepare(it, Store.coverMax) }
                 } catch (_: Throwable) { null }
             }
-            if (b != null) { pendingCover = b; coverRemoved = false } else msg = "No se pudo leer esa imagen"
+            if (b != null) setCover(b) else msg = "No se pudo leer esa imagen"
         }
     }
 
@@ -171,6 +185,29 @@ fun EditorScreen(paths: List<String>) {
     Column(Modifier.fillMaxSize()) {
         Bar(title, { if (dirty) askBack = true else Nav.pop() }) {
             IconBtn("💾", enabled = dirty && !busy, accent = true) { save() }
+            Box {
+                IconBtn("⋮") { more = true }
+                DropdownMenu(more, { more = false }) {
+                    DropdownMenuItem(text = { Text("Copiar metadatos") }, leadingIcon = { Icon(Icons.Filled.ContentCopy, null) }, onClick = {
+                        more = false
+                        Store.clipMeta = FIELDS.associate { (id, _) -> id to (values[id] ?: "") }.filterValues { it.isNotBlank() }
+                        Store.clipCover = shownBytes
+                        msg = "Metadatos copiados. Abre otras canciones y usa «Pegar metadatos…»."
+                    })
+                    DropdownMenuItem(
+                        text = { Text("Pegar metadatos…") }, leadingIcon = { Icon(Icons.Filled.ContentPaste, null) },
+                        enabled = Store.clipMeta != null, onClick = { more = false; dlg = EDlg.PasteMeta }
+                    )
+                    DropdownMenuItem(text = { Text("Reparar recortes (clipping)…") }, leadingIcon = { Icon(Icons.Filled.AutoFixHigh, null) }, onClick = { more = false; showClip = true })
+                    DropdownMenuItem(text = { Text("Quitar paréntesis del nombre…") }, leadingIcon = { Icon(Icons.Filled.CleaningServices, null) }, onClick = { more = false; dlg = EDlg.Parens })
+                    if (files.size == 1) DropdownMenuItem(text = { Text("Renombrar archivo") }, leadingIcon = { Icon(Icons.Filled.DriveFileRenameOutline, null) }, onClick = { more = false; dlg = EDlg.Rename })
+                    if (files.size == 1) DropdownMenuItem(text = { Text("Ir a la carpeta") }, leadingIcon = { Icon(Icons.Filled.FolderOpen, null) }, onClick = {
+                        more = false
+                        Store.libView = 1; Store.folderView = true; Store.save(); LibNav.openFolder = files[0].parent; LibNav.index = 0; LibNav.offset = 0
+                        Nav.stack.retainAll { it is Screen.Library }
+                    })
+                }
+            }
         }
         Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
             val paths0 = files.map { it.absolutePath }
@@ -231,14 +268,21 @@ fun EditorScreen(paths: List<String>) {
                 Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) { Chip(coverInfo) }
             }
 
-            FlowRow(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
                 val q = (artist + " " + songTitle).trim().ifBlank { files[0].nameWithoutExtension }
                 fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
-                TextButton(onClick = { openUrl(ctx, "https://www.youtube.com/results?search_query=" + enc(q)) }) { Text("▶ YouTube") }
-                TextButton(onClick = { openUrl(ctx, "https://open.spotify.com/search/" + enc(q)) }) { Text("🟢 Spotify") }
-                TextButton(onClick = { openUrl(ctx, "https://tidal.com/search?q=" + enc(q)) }) { Text("🌊 Tidal") }
-                TextButton(onClick = { openUrl(ctx, "https://www.qobuz.com/search?q=" + enc(q)) }) { Text("🎧 Qobuz") }
-                TextButton(onClick = { openUrl(ctx, "https://es.wikipedia.org/wiki/Special:Search?go=Go&search=" + enc(artist.ifBlank { q })) }) { Text("📖 Wikipedia") }
+                OutlinedButton(onClick = { searchMenu = true }) {
+                    Icon(Icons.Filled.TravelExplore, null, Modifier.size(18.dp)); Text("  Buscar la canción en…")
+                }
+                DropdownMenu(searchMenu, { searchMenu = false }) {
+                    for ((name, url) in listOf(
+                        "YouTube" to "https://www.youtube.com/results?search_query=" + enc(q),
+                        "Spotify" to "https://open.spotify.com/search/" + enc(q),
+                        "Tidal" to "https://tidal.com/search?q=" + enc(q),
+                        "Qobuz" to "https://www.qobuz.com/search?q=" + enc(q),
+                        "Wikipedia" to "https://es.wikipedia.org/wiki/Special:Search?go=Go&search=" + enc(artist.ifBlank { q })
+                    )) DropdownMenuItem(text = { Text(name) }, onClick = { searchMenu = false; openUrl(ctx, url) })
+                }
             }
 
             tech?.let { t ->
@@ -268,7 +312,7 @@ fun EditorScreen(paths: List<String>) {
 
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Button(onClick = { dlg = EDlg.AiFill }) { Text("✨ Rellenar con IA") }
-                OutlinedButton(onClick = { dlg = EDlg.Genres }) { Text("🎼 Géneros con IA") }
+                OutlinedButton(onClick = { dlg = EDlg.Genres }) { Text("🎼 Géneros") }
                 OutlinedButton(onClick = { dlg = EDlg.MusicBrainz }) { Text("MusicBrainz") }
                 OutlinedButton(onClick = { dlg = EDlg.Discogs }) { Text("Discogs") }
             }
@@ -279,20 +323,40 @@ fun EditorScreen(paths: List<String>) {
                     value = lyrics, onValueChange = { lyrics = it; lyricsEdited = true },
                     minLines = 6, maxLines = 14, modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedButton(
-                    enabled = !lyrBusy, modifier = Modifier.padding(top = 6.dp),
+                Button(
+                    enabled = !lyrBusy, modifier = Modifier.padding(top = 6.dp).fillMaxWidth(),
                     onClick = {
                         lyrBusy = true
                         scope.launch {
                             val secs = tech?.dur?.split(":")?.let { if (it.size == 2) (it[0].toIntOrNull() ?: 0) * 60 + (it[1].toIntOrNull() ?: 0) else 0 } ?: 0
                             val r = withContext(Dispatchers.IO) {
-                                Sources.lrclib(artist.ifBlank { "" }, songTitle.ifBlank { files[0].nameWithoutExtension }, values["album"] ?: "", secs)
+                                try {
+                                    Result.success(Sources.findLyrics(artist.ifBlank { "" }, songTitle.ifBlank { files[0].nameWithoutExtension }, values["album"] ?: "", secs))
+                                } catch (e: Throwable) { Result.failure(e) }
                             }
                             lyrBusy = false
-                            if (r != null) { lyrics = r; lyricsEdited = true; msg = "Letra encontrada (pendiente de guardar)" } else msg = "No encontré la letra en LRCLIB"
+                            val found = r.getOrNull()
+                            if (found != null) {
+                                lyrics = found.first; lyricsEdited = true
+                                msg = "Letra encontrada en ${found.second}" + (if (Sources.isLrc(found.first)) " (sincronizada)" else "") + ". Falta guardar."
+                            } else if (r.isFailure) msg = "No hay conexión con los servicios de letras. Inténtalo en un momento."
+                            else msg = "Ningún servicio (LRCLIB, NetEase, lyrics.ovh) tiene esta letra. Prueba «musica.com» y luego «Pegar letra»."
                         }
                     }
-                ) { Text(if (lyrBusy) "Buscando…" else "🔎 Buscar letra en LRCLIB (sincronizada)") }
+                ) { Text(if (lyrBusy) "Buscando…" else "🔎 Buscar letra (LRCLIB, NetEase, lyrics.ovh)") }
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { openUrl(ctx, Sources.musicaComUrl(artist, songTitle.ifBlank { files[0].nameWithoutExtension })); msg = "Copia la letra en el navegador y vuelve a pulsar «Pegar letra»." },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("🌐 musica.com", maxLines = 1) }
+                    OutlinedButton(
+                        onClick = {
+                            val t = Sources.tidyLyrics(pasteText(ctx))
+                            if (t.isBlank()) msg = "No hay texto copiado." else { lyrics = t; lyricsEdited = true; msg = "Letra pegada. Falta guardar." }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("📋 Pegar letra", maxLines = 1) }
+                }
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -302,6 +366,7 @@ fun EditorScreen(paths: List<String>) {
     }
 
     if (showConvert) ConvertDialog(files) { showConvert = false }
+    if (showClip) ClipRepairDialog(files) { showClip = false }
 
     if (askBack) {
         AlertDialog(
@@ -319,10 +384,27 @@ fun EditorScreen(paths: List<String>) {
 
     when (dlg) {
         is EDlg.AiFill -> AiFillDialog(guessTitle, guessArtist, { applyVals(it); dlg = null }, { dlg = null })
-        is EDlg.Genres -> GenresDialog(guessTitle, guessArtist, values["album"] ?: "", { g -> values["genre"] = g; markEdited("genre"); dlg = null }, { dlg = null })
+        is EDlg.Genres -> GenresDialog(files, guessTitle, guessArtist, values["album"] ?: "", { g -> values["genre"] = g; markEdited("genre"); dlg = null }, { dlg = null })
+        is EDlg.PasteMeta -> PasteMetaDialog({ m, cov ->
+            applyVals(m); if (cov != null) { pendingCover = cov; coverRemoved = false }; dlg = null
+            msg = "Pegado. Revisa y pulsa 💾 para guardar."
+        }, { dlg = null })
+        is EDlg.Parens -> ParensDialog(files, { newPaths -> dlg = null; if (newPaths != null) { Lib.requestScan(); Nav.stack[Nav.stack.size - 1] = Screen.Editor(newPaths) } }, { dlg = null })
+        is EDlg.Rename -> TextPrompt("Renombrar archivo", "Nombre (sin extensión)", files[0].nameWithoutExtension, { dlg = null }) { n ->
+            val f = files[0]
+            val safe = n.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+            val dst = File(f.parentFile, safe + "." + f.extension)
+            dlg = null
+            if (dst.exists() && dst.absolutePath != f.absolutePath) msg = "Ya existe un archivo con ese nombre."
+            else if (f.renameTo(dst)) {
+                if (PlayerManager.currentPath == f.absolutePath) PlayerManager.currentPath = dst.absolutePath
+                Lib.requestScan(); Nav.stack[Nav.stack.size - 1] = Screen.Editor(listOf(dst.absolutePath))
+            } else msg = "No se pudo renombrar."
+        }
+        is EDlg.Crop -> CropDialog((dlg as EDlg.Crop).bytes, { b -> pendingCover = b; coverRemoved = false; dlg = null }, { dlg = null })
         is EDlg.MusicBrainz -> CandidatesDialog("MusicBrainz", guessArtist, guessTitle, { applyVals(it); dlg = null }, { dlg = null })
         is EDlg.Discogs -> CandidatesDialog("Discogs", guessArtist, guessTitle, { applyVals(it); dlg = null }, { dlg = null })
-        is EDlg.CoverSearch -> CoverSearchDialog(guessArtist, guessTitle, { b -> pendingCover = b; coverRemoved = false; dlg = null }, { dlg = null })
+        is EDlg.CoverSearch -> CoverSearchDialog(guessArtist, guessTitle, { b -> dlg = null; setCover(b) }, { dlg = null })
         is EDlg.CoverView -> {
             val b = bmp
             AlertDialog(
@@ -334,42 +416,67 @@ fun EditorScreen(paths: List<String>) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AiFillDialog(initTitle: String, initArtist: String, onApply: (Map<String, String>) -> Unit, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var t by remember { mutableStateOf(initTitle) }
     var a by remember { mutableStateOf(initArtist) }
     val res = remember { mutableStateMapOf<String, String>() }
+    var opts by remember { mutableStateOf<Map<String, List<Pair<String, List<String>>>>>(emptyMap()) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var found by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("✨ Rellenar con IA") },
+        title = { Text("✨ Rellenar metadatos") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (Store.key(Store.provider).isBlank()) NoKeyNotice(onDismiss)
-                Text("Escribe la canción y el artista. La IA buscará los datos; revísalos antes de aplicar (puede equivocarse).", fontSize = 12.sp)
+                Text(
+                    "Busca en iTunes, Deezer, MusicBrainz" + (if (Store.discogsToken.isNotBlank()) ", Discogs" else "") +
+                        (if (Store.key(Store.provider).isNotBlank()) " y la IA" else " (pon tu key en Ajustes para usar también la IA)") +
+                        ". Si las fuentes no coinciden, cada campo tiene un desplegable para elegir.",
+                    fontSize = 12.sp
+                )
                 OutlinedTextField(t, { t = it }, label = { Text("Canción") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 OutlinedTextField(a, { a = it }, label = { Text("Artista") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
                 Button(enabled = !loading && t.isNotBlank(), modifier = Modifier.padding(top = 8.dp), onClick = {
                     loading = true
-                    status = "Buscando en iTunes/Deezer y con la IA…"
+                    status = "Buscando en las fuentes…"
                     scope.launch {
                         try {
-                            val r = withContext(Dispatchers.IO) { Ai.fillMetadata(t, a) }
-                            res.clear(); res.putAll(r)
+                            val r = withContext(Dispatchers.IO) { Ai.fillOptions(t, a) }
+                            opts = r
+                            res.clear(); for ((k, v) in r) res[k] = v.first().first
                             found = r.isNotEmpty()
-                            status = if (found) "Revisa los datos y pulsa Aplicar." else "La IA no encontró datos fiables."
+                            status = if (found) "Revisa los datos y pulsa Aplicar." else "No se encontraron datos fiables."
                         } catch (e: Throwable) {
                             status = "No se pudo: ${e.message}"
                         }
                         loading = false
                     }
-                }) { Text("🔎 Buscar con IA") }
+                }) { Text(if (loading) "Buscando…" else "🔎 Buscar") }
                 if (status.isNotEmpty()) Text(status, Modifier.padding(top = 6.dp), fontSize = 12.sp)
                 if (found) for ((id, label) in FIELDS) {
-                    OutlinedTextField(res[id] ?: "", { res[id] = it }, label = { Text(label) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                    val o = opts[id].orEmpty()
+                    var open by remember(id) { mutableStateOf(false) }
+                    val cur = res[id] ?: ""
+                    val from = o.firstOrNull { it.first == cur }?.second
+                    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { if (o.size > 1) open = it }, modifier = Modifier.padding(top = 6.dp)) {
+                        OutlinedTextField(
+                            cur, { res[id] = it }, label = { Text(label) }, singleLine = true,
+                            supportingText = { if (from != null) Text("← " + from.joinToString(", "), fontSize = 11.sp) else if (cur.isNotEmpty()) Text("escrito a mano", fontSize = 11.sp) },
+                            trailingIcon = { if (o.size > 1) ExposedDropdownMenuDefaults.TrailingIcon(open) },
+                            colors = if (o.size > 1) OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.primary) else OutlinedTextFieldDefaults.colors(),
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        if (o.size > 1) ExposedDropdownMenu(open, { open = false }) {
+                            for ((v, srcs) in o) DropdownMenuItem(
+                                text = { Column { Text(v); Text(srcs.joinToString(", "), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                                onClick = { res[id] = v; open = false }
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -378,22 +485,57 @@ private fun AiFillDialog(initTitle: String, initArtist: String, onApply: (Map<St
     )
 }
 
+val COMMON_GENRES = listOf(
+    "Pop", "Rock", "Reguetón", "Trap latino", "Salsa", "Bachata", "Cumbia", "Merengue", "Hip hop", "Rap", "R&B", "Electrónica",
+    "House", "Techno", "EDM", "Balada", "Pop latino", "Rock alternativo", "Indie", "Metal", "Punk", "Jazz", "Blues", "Clásica",
+    "Soul", "Funk", "Disco", "K-pop", "J-pop", "Anime", "Banda sonora", "Folk", "Country", "Reggae", "Huayno", "Vals criollo",
+    "Bolero", "Ranchera", "Corrido", "Tango", "Bossa nova", "Lo-fi", "Ambient", "Gospel", "Infantil"
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GenresDialog(title: String, artist: String, album: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
-    var items by remember { mutableStateOf<List<String>?>(null) }
+private fun GenresDialog(files: List<File>, title: String, artist: String, album: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    var items by remember { mutableStateOf<List<Pair<String, Int>>?>(null) }
     var err by remember { mutableStateOf("") }
+    var other by remember { mutableStateOf("") }
+    val hasKey = Store.key(Store.provider).isNotBlank()
     LaunchedEffect(Unit) {
-        try { items = withContext(Dispatchers.IO) { Ai.suggestGenres(title, artist, album) } } catch (e: Throwable) { err = e.message ?: "Error"; items = emptyList() }
+        if (!hasKey) { items = emptyList(); return@LaunchedEffect }
+        try {
+            items = withContext(Dispatchers.IO) {
+                if (files.size == 1) Ai.suggestGenres(title, artist, album).map { it to 1 }
+                else {
+                    // con varias canciones se juntan las sugerencias (y cuántas canciones sugieren cada una)
+                    val combos = files.map { f -> val m = MetaCache.get(f); Triple(m.title.ifBlank { f.nameWithoutExtension }, m.artist, m.album) }
+                        .distinctBy { (it.second + "|" + it.third).lowercase() }.take(6)
+                    val count = LinkedHashMap<String, Int>()
+                    for ((t, a, al) in combos) try { Ai.suggestGenres(t, a, al).forEach { g -> count[g] = (count[g] ?: 0) + 1 } } catch (_: Throwable) {}
+                    count.entries.sortedByDescending { it.value }.map { it.key to it.value }
+                }
+            }
+        } catch (e: Throwable) { err = e.message ?: "Error"; items = emptyList() }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🎼 Géneros sugeridos") },
+        title = { Text("🎼 Géneros") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (Store.key(Store.provider).isBlank()) NoKeyNotice(onDismiss)
+                if (files.size > 1) Text("Lo que elijas se pone a las ${files.size} canciones.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Sugeridos por la IA", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+                if (!hasKey) NoKeyNotice(onDismiss)
                 else if (items == null) Text("Consultando a la IA…")
                 else if (items!!.isEmpty()) Text(if (err.isNotEmpty()) "No se pudo: $err" else "Sin sugerencias.")
-                else for (g in items!!) TextButton(onClick = { onPick(g) }, modifier = Modifier.fillMaxWidth()) { Text(g, textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth()) }
+                else for ((g, n) in items!!) TextButton(onClick = { onPick(g) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(g + if (files.size > 1 && n > 0) "  ($n)" else "", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                }
+                Text("Otro género", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(other, { other = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("Escribe o elige abajo") })
+                    Button(enabled = other.isNotBlank(), onClick = { onPick(other.trim()) }, modifier = Modifier.padding(start = 8.dp)) { Text("Poner") }
+                }
+                FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (g in COMMON_GENRES.filter { other.isBlank() || it.contains(other, true) }.take(24)) AssistChip(onClick = { other = g }, label = { Text(g, fontSize = 12.sp) })
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } }

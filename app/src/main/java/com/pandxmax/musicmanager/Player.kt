@@ -46,6 +46,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -70,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -81,25 +85,15 @@ fun fmtTime(ms: Long): String {
 
 data class SongMeta(val title: String, val artist: String, val album: String)
 
-/** Título, artista y álbum desde las etiquetas (rápido); si faltan, se deduce del nombre del archivo. */
+/** Título, artista y álbum (de la caché o de las etiquetas); si faltan, se deduce del nombre del archivo. */
 fun songMeta(path: String): SongMeta {
     val f = File(path)
+    val m = MetaCache.get(f)
     val base = f.nameWithoutExtension
     val parts = base.split(" - ", limit = 2)
-    var t = ""; var a = ""; var al = ""
-    val r = MediaMetadataRetriever()
-    try {
-        r.setDataSource(path)
-        t = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
-        a = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
-        al = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
-    } catch (_: Throwable) {
-    } finally {
-        try { r.release() } catch (_: Throwable) {}
-    }
-    if (t.isBlank()) t = if (parts.size == 2) parts[1] else base
-    if (a.isBlank()) a = if (parts.size == 2) parts[0] else ""
-    return SongMeta(t.trim(), a.trim(), al.trim())
+    val t = m.title.ifBlank { if (parts.size == 2) parts[1] else base }
+    val a = m.artist.ifBlank { if (parts.size == 2) parts[0] else "" }
+    return SongMeta(t.trim(), a.trim(), m.album.trim())
 }
 
 private data class LrcLine(val ms: Long, val text: String)
@@ -120,17 +114,15 @@ private fun parseLrc(txt: String): List<LrcLine>? {
     return if (out.size >= 3) out.sortedBy { it.ms } else null
 }
 
-/** Barra de progreso gruesa y redondeada (estilo Poweramp): se puede tocar o arrastrar. */
+/** Barra de avance con la onda de la canción (como en el programa de Windows): se puede tocar o arrastrar. */
 @Composable
-private fun SeekBar(pos: Float, dur: Float, accent: Color, onSeek: (Float) -> Unit, onDrag: (Float?) -> Unit) {
-    var w by remember { mutableFloatStateOf(1f) }
+private fun SeekBar(path: String, pos: Float, dur: Float, accent: Color, onSeek: (Float) -> Unit, onDrag: (Float?) -> Unit) {
+    val wave by produceState(Wave.peek(path), path) { if (value == null) value = withContext(Dispatchers.IO) { Wave.get(path) } }
     val frac = if (dur > 0) (pos / dur).coerceIn(0f, 1f) else 0f
+    val grow by animateFloatAsState(if (wave != null) 1f else 0f, tween(500), label = "onda")
     Canvas(
-        Modifier.fillMaxWidth().height(36.dp)
-            .pointerInput(dur) {
-                w = size.width.toFloat()
-                detectTapGestures { o -> onSeek((o.x / size.width).coerceIn(0f, 1f) * dur) }
-            }
+        Modifier.fillMaxWidth().height(46.dp)
+            .pointerInput(dur) { detectTapGestures { o -> onSeek((o.x / size.width).coerceIn(0f, 1f) * dur) } }
             .pointerInput(dur) {
                 var x = 0f
                 detectHorizontalDragGestures(
@@ -141,16 +133,29 @@ private fun SeekBar(pos: Float, dur: Float, accent: Color, onSeek: (Float) -> Un
                 )
             }
     ) {
-        val h = 6.dp.toPx()
+        val w = wave
         val y = size.height / 2
-        drawRoundRect(Color.White.copy(alpha = 0.18f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2))
         val fx = size.width * frac
-        drawRoundRect(
-            Brush.horizontalGradient(listOf(accent.copy(alpha = 0.7f), accent)), Offset(0f, y - h / 2),
-            Size(fx.coerceAtLeast(h), h), CornerRadius(h / 2)
-        )
-        drawCircle(Color.White, 9.dp.toPx(), Offset(fx, y))
-        drawCircle(accent, 5.dp.toPx(), Offset(fx, y))
+        if (w != null) {
+            val n = w.size
+            val step = size.width / n
+            val bw = step * 0.62f
+            for (k in 0 until n) {
+                val cx = k * step + step / 2
+                val h = (size.height * 0.92f * w[k] * grow).coerceAtLeast(3.dp.toPx())
+                val played = cx <= fx
+                drawRoundRect(
+                    if (played) accent else Color.White.copy(alpha = 0.28f),
+                    Offset(cx - bw / 2, y - h / 2), Size(bw, h), CornerRadius(bw / 2)
+                )
+            }
+            drawRoundRect(Color.White, Offset(fx - 1.5.dp.toPx(), 2.dp.toPx()), Size(3.dp.toPx(), size.height - 4.dp.toPx()), CornerRadius(2.dp.toPx()))
+        } else {
+            val h = 6.dp.toPx()
+            drawRoundRect(Color.White.copy(alpha = 0.18f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2))
+            drawRoundRect(accent, Offset(0f, y - h / 2), Size(fx.coerceAtLeast(h), h), CornerRadius(h / 2))
+            drawCircle(Color.White, 8.dp.toPx(), Offset(fx, y))
+        }
     }
 }
 
@@ -196,6 +201,7 @@ fun PlayerScreen() {
     var drag by remember { mutableStateOf<Float?>(null) }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var volMenu by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
     val dur = PlayerManager.duration.toFloat().coerceAtLeast(1f)
     val pos = (drag ?: PlayerManager.position.toFloat()).coerceIn(0f, dur)
@@ -221,10 +227,28 @@ fun PlayerScreen() {
                     if (idx >= 0) Text("${idx + 1} de ${queue.size}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium)
                 }
                 Box {
+                    RoundCtl(if (PlayerManager.volume <= 0.01f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, 44, Color.White) { volMenu = true }
+                    DropdownMenu(volMenu, { volMenu = false }) {
+                        Row(Modifier.width(260.dp).padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.AutoMirrored.Filled.VolumeDown, null)
+                            // curva de oído: cada movimiento se siente parejo
+                            Slider(
+                                value = kotlin.math.sqrt(PlayerManager.volume), onValueChange = { PlayerManager.setVol(it * it) },
+                                modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                            )
+                            Text("${(kotlin.math.sqrt(PlayerManager.volume) * 100).toInt()}", fontSize = 12.sp, modifier = Modifier.width(28.dp))
+                        }
+                    }
+                }
+                Box {
                     RoundCtl(Icons.Filled.MoreVert, 44, Color.White) { menu = true }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem(text = { Text("Editar datos y portada") }, enabled = cur != null, onClick = { menu = false; cur?.let { Nav.push(Screen.Editor(listOf(it))) } })
                         DropdownMenuItem(text = { Text("Ajustes de la canción") }, enabled = cur != null, onClick = { menu = false; cur?.let { Nav.push(Screen.Fx(it)) } })
+                        DropdownMenuItem(
+                            text = { Text(if (Store.playerStyle == 1) "Portada en tarjeta" else "Portada grande difuminada") },
+                            onClick = { menu = false; Store.playerStyle = if (Store.playerStyle == 1) 0 else 1; Store.save() }
+                        )
                         DropdownMenuItem(text = { Text("Guardar la cola como lista") }, enabled = queue.isNotEmpty(), onClick = { menu = false; showSave = true })
                         DropdownMenuItem(text = { Text("Listas guardadas") }, onClick = { menu = false; sheet = Sheet.Lists })
                     }
@@ -257,12 +281,14 @@ fun PlayerScreen() {
                         }
                     }
                 }
+                val big = Store.playerStyle == 1
                 HorizontalPager(
-                    state = pager, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 28.dp),
-                    pageSpacing = 16.dp, beyondViewportPageCount = 1, key = { "$it|" + queue.getOrElse(it) { "" } }
+                    state = pager, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = if (big) 0.dp else 28.dp),
+                    pageSpacing = if (big) 0.dp else 16.dp, beyondViewportPageCount = 1, key = { "$it|" + queue.getOrElse(it) { "" } }
                 ) { page ->
                     val off = ((pager.currentPage - page) + pager.currentPageOffsetFraction).let { kotlin.math.abs(it) }.coerceIn(0f, 1f)
-                    CoverPage(queue[page], Modifier.graphicsLayer {
+                    if (big) BigCoverPage(queue[page], Modifier.graphicsLayer { alpha = 1f - 0.6f * off })
+                    else CoverPage(queue[page], Modifier.graphicsLayer {
                         val sc = 1f - 0.10f * off
                         scaleX = sc; scaleY = sc
                         alpha = 1f - 0.45f * off
@@ -272,12 +298,15 @@ fun PlayerScreen() {
                 CoverPage(cur, Modifier.padding(horizontal = 28.dp))
             }
 
-            Spacer(Modifier.height(22.dp))
-            Crossfade(cur, animationSpec = tween(350), label = "info", modifier = Modifier.padding(horizontal = 26.dp)) { p -> SongInfo(p, accent) }
+            Spacer(Modifier.height(if (Store.playerStyle == 1) 0.dp else 22.dp))
+            Crossfade(
+                cur, animationSpec = tween(350), label = "info",
+                modifier = Modifier.padding(horizontal = 26.dp).offset(y = if (Store.playerStyle == 1) (-36).dp else 0.dp)
+            ) { p -> SongInfo(p, accent) }
 
             Column(Modifier.padding(horizontal = 24.dp)) {
                 Spacer(Modifier.height(10.dp))
-                SeekBar(pos, dur, accent, onSeek = { PlayerManager.seek(it.toLong()); PlayerManager.position = it.toLong() }, onDrag = { drag = it })
+                SeekBar(cur, pos, dur, accent, onSeek = { PlayerManager.seek(it.toLong()); PlayerManager.position = it.toLong() }, onDrag = { drag = it })
                 Row(Modifier.fillMaxWidth()) {
                     Text(fmtTime(pos.toLong()), fontSize = 12.sp, color = Color.White.copy(alpha = 0.75f))
                     Spacer(Modifier.weight(1f))
@@ -365,6 +394,29 @@ private fun CoverPage(path: String, modifier: Modifier = Modifier) {
         val b = cover
         if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(96.dp))
+    }
+}
+
+/** Portada a todo lo ancho que se funde con el fondo por abajo («portada grande difuminada»). */
+@Composable
+private fun BigCoverPage(path: String, modifier: Modifier = Modifier) {
+    val cover by produceState<Bitmap?>(null, path, Store.coverVersion) { value = withContext(Dispatchers.IO) { Covers.thumb(path, 900) } }
+    Box(
+        modifier.fillMaxWidth().aspectRatio(1f).pointerInput(path) { detectTapGestures(onDoubleTap = { PlayerManager.toggle() }) },
+        contentAlignment = Alignment.Center
+    ) {
+        val b = cover
+        if (b != null) {
+            if (Build.VERSION.SDK_INT >= 31) Image(
+                b.asImageBitmap(), null, Modifier.fillMaxSize().graphicsLayer { alpha = 0.6f }.blur(30.dp), contentScale = ContentScale.Crop
+            )
+            Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.3f), modifier = Modifier.size(96.dp))
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Color(0xFF0E0E14))
+            )
+        )
     }
 }
 
@@ -560,7 +612,12 @@ private fun ToggleSmall(icon: ImageVector, on: Boolean, accent: Color, onClick: 
 
 @Composable
 private fun LyricsSheet(cur: String?) {
-    val txt by produceState<String?>(null, cur) { value = cur?.let { withContext(Dispatchers.IO) { Tags.lyrics(File(it)) } } ?: "" }
+    var found by remember(cur) { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var note by remember(cur) { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    val read by produceState<String?>(null, cur) { value = cur?.let { withContext(Dispatchers.IO) { Tags.lyrics(File(it)) } } ?: "" }
+    val txt = found ?: read
     val lrc = remember(txt) { txt?.let { parseLrc(it) } }
     Column(Modifier.fillMaxWidth().fillMaxHeight(0.8f).padding(horizontal = 20.dp)) {
         Text("Letra", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(bottom = 8.dp))
@@ -569,7 +626,19 @@ private fun LyricsSheet(cur: String?) {
             t == null -> Text("Cargando…")
             t.isBlank() -> {
                 Text("Esta canción no tiene letra guardada.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { cur?.let { Nav.push(Screen.Editor(listOf(it))) } }) { Text("Buscarla en LRCLIB (en Editar)") }
+                Button(enabled = !busy, onClick = {
+                    val p = cur ?: return@Button
+                    busy = true; note = "Buscando en LRCLIB, NetEase y lyrics.ovh…"
+                    scope.launch {
+                        val m = withContext(Dispatchers.IO) { songMeta(p) }
+                        val r = withContext(Dispatchers.IO) { try { Sources.findLyrics(m.artist, m.title, m.album, (PlayerManager.duration / 1000).toInt()) } catch (_: Throwable) { null } }
+                        if (r == null) { busy = false; note = "No la encontré. Prueba en Editar → «musica.com» y «Pegar letra»."; return@launch }
+                        val ok = withContext(Dispatchers.IO) { try { Tags.write(File(p), emptyMap(), null, false, r.first); true } catch (e: Throwable) { ErrLog.note("guardar letra", e); false } }
+                        busy = false
+                        if (ok) { found = r.first; note = "Letra de ${r.second}, guardada en la canción." } else { found = r.first; note = "Encontrada en ${r.second}, pero no se pudo guardar en el archivo." }
+                    }
+                }, modifier = Modifier.padding(top = 10.dp)) { Text(if (busy) "Buscando…" else "🔎 Buscar la letra y guardarla") }
+                if (note.isNotEmpty()) Text(note, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
             }
             lrc != null -> {
                 val now = PlayerManager.position + 300

@@ -26,6 +26,9 @@ object Store {
     /** Carpeta elegida por el usuario donde está su música ("" = aún no elegida). */
     var musicDir by mutableStateOf("")
     var choosingDir by mutableStateOf(false)
+    /** Metadatos copiados con «Copiar metadatos» (para pegarlos en otras canciones). */
+    var clipMeta by mutableStateOf<Map<String, String>?>(null)
+    var clipCover: ByteArray? = null
     /** Carpetas elegidas (con sus subcarpetas) y carpetas excluidas dentro de ellas. */
     var musicDirs by mutableStateOf<List<String>>(emptyList())
     var excludedDirs by mutableStateOf<List<String>>(emptyList())
@@ -42,6 +45,10 @@ object Store {
 
     private fun list(k: String) = (prefs.getString(k, "") ?: "").split("\n").filter { it.isNotBlank() }
     var folderView by mutableStateOf(false)
+    /** Vista de la biblioteca: 0 canciones, 1 carpetas, 2 artistas, 3 géneros. */
+    var libView by mutableIntStateOf(0)
+    /** Estilo del reproductor: 0 portada en tarjeta, 1 portada grande difuminada. */
+    var playerStyle by mutableIntStateOf(0)
     var coverMax by mutableStateOf(1200)
 
     var coverVersion by mutableIntStateOf(0)
@@ -63,6 +70,8 @@ object Store {
         excludedDirs = list("excludedDirs")
         extraRoots = list("extraRoots")
         folderView = prefs.getBoolean("folderView", false)
+        libView = prefs.getInt("libView", if (folderView) 1 else 0)
+        playerStyle = prefs.getInt("playerStyle", 0)
         provider = prefs.getString("provider", "Gemini") ?: "Gemini"
         coverMax = prefs.getInt("coverMax", 1200)
     }
@@ -72,7 +81,7 @@ object Store {
             .putBoolean("dark", dark).putInt("accent", accent).putBoolean("coverTint", coverTint)
             .putString("provider", provider).putString("discogs", discogsToken)
             .putString("lastDir", lastDir).putString("musicDir", musicDir).putString("musicDirs", musicDirs.joinToString("\n"))
-            .putString("excludedDirs", excludedDirs.joinToString("\n")).putString("extraRoots", extraRoots.joinToString("\n")).putBoolean("folderView", folderView).putInt("coverMax", coverMax)
+            .putString("excludedDirs", excludedDirs.joinToString("\n")).putString("extraRoots", extraRoots.joinToString("\n")).putBoolean("folderView", folderView).putInt("libView", libView).putInt("playerStyle", playerStyle).putInt("coverMax", coverMax)
             .apply()
     }
 

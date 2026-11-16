@@ -65,6 +65,8 @@ object PlayerManager {
             override fun onRepeatModeChanged(repeatMode: Int) { sync() }
         })
         sync()
+        volume = Store.prefs.getFloat("volume", 1f)
+        try { c.volume = volume } catch (_: Throwable) {}
         pending?.let { pending = null; it(c) }
     }
 
@@ -159,6 +161,14 @@ object PlayerManager {
     fun playIndex(i: Int) {
         controller?.let { navDir = if (i >= it.currentMediaItemIndex) 1 else -1; it.seekTo(i, 0L); it.play() }
     }
+    /** Volumen de la app (0–1), independiente del volumen del teléfono. */
+    var volume by mutableFloatStateOf(1f)
+    fun setVol(v: Float) {
+        volume = v.coerceIn(0f, 1f)
+        controller?.volume = volume
+        Store.prefs.edit().putFloat("volume", volume).apply()
+    }
+
     fun removeAt(i: Int) { controller?.removeMediaItem(i) }
     fun move(from: Int, to: Int) {
         val c = controller ?: return

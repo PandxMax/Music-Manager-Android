@@ -66,7 +66,7 @@ object Ai {
     private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
 
     /** Datos reales del catálogo de iTunes (y Deezer de respaldo): álbum, año, pista, disco, género. */
-    fun catalog(title: String, artist: String): Map<String, String> {
+    fun catalog(title: String, artist: String, useDeezer: Boolean = true): Map<String, String> {
         val t = norm(title); val a = norm(artist)
         val out = LinkedHashMap<String, String>()
         try {
@@ -98,7 +98,14 @@ object Ai {
             }
         } catch (_: Throwable) {
         }
-        if (out["album"].isNullOrEmpty()) {
+        if (useDeezer && out["album"].isNullOrEmpty()) out.putAll(deezer(title, artist).filterKeys { out[it].isNullOrEmpty() })
+        return out.filterValues { it.isNotEmpty() }
+    }
+
+    /** Datos de la canción en Deezer. */
+    fun deezer(title: String, artist: String): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        run {
             try {
                 val q = if (artist.isNotBlank()) "artist:\"$artist\" track:\"$title\"" else title
                 val d = JSONObject(Net.get("https://api.deezer.com/search?limit=5&q=" + enc(q)))
@@ -119,6 +126,41 @@ object Ai {
             }
         }
         return out.filterValues { it.isNotEmpty() }
+    }
+
+    /**
+     * Opciones para cada campo según cada fuente (iTunes, Deezer, MusicBrainz, Discogs e IA), como en Windows:
+     * campo → lista de (valor, fuentes). La primera es la recomendada.
+     */
+    fun fillOptions(title: String, artist: String): Map<String, List<Pair<String, List<String>>>> {
+        val bySource = ArrayList<Pair<String, Map<String, String>>>()
+        fun add(src: String, block: () -> Map<String, String>) { try { val m = block(); if (m.isNotEmpty()) bySource.add(src to m) } catch (_: Throwable) {} }
+        add("iTunes") { catalog(title, artist, useDeezer = false) }
+        add("Deezer") { deezer(title, artist) }
+        add("MusicBrainz") {
+            val nt = norm(title)
+            Sources.musicBrainz(artist, title).firstOrNull { nt.isEmpty() || norm(it.values["title"]).contains(nt) || nt.contains(norm(it.values["title"])) }?.values ?: emptyMap()
+        }
+        if (Store.discogsToken.isNotBlank()) add("Discogs") { Sources.discogs(artist, title).firstOrNull()?.values ?: emptyMap() }
+        var aiErr: Throwable? = null
+        if (Store.key(Store.provider).isNotBlank()) {
+            try { bySource.add("IA" to fillMetadata(title, artist)) } catch (e: Throwable) { aiErr = e }
+        }
+        if (bySource.isEmpty()) throw aiErr ?: RuntimeException("Ninguna fuente encontró esta canción. Revisa el título y el artista.")
+        val out = LinkedHashMap<String, List<Pair<String, List<String>>>>()
+        for ((id, _) in FIELDS) {
+            val opts = LinkedHashMap<String, Pair<String, ArrayList<String>>>()
+            for ((src, m) in bySource) {
+                var v = (m[id] ?: "").trim()
+                if (id == "date") v = Regex("\\d{4}").find(v)?.value ?: ""
+                if (id == "track" || id == "disc") v = Regex("\\d+").find(v)?.value ?: ""
+                if (v.isEmpty()) continue
+                val k = v.lowercase()
+                opts.getOrPut(k) { v to ArrayList() }.second.let { if (src !in it) it.add(src) }
+            }
+            if (opts.isNotEmpty()) out[id] = opts.values.map { it.first to it.second.toList() }
+        }
+        return out
     }
 
     /** Rellena TODOS los campos: primero el catálogo real (iTunes/Deezer) y la IA completa el resto. */

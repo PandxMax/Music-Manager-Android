@@ -54,6 +54,7 @@ fun SpectrumScreen(initial: List<SpecItem>) {
     val results = remember { mutableStateMapOf<String, SpectroResult>() }
     val errors = remember { mutableStateMapOf<String, String>() }
     var current by remember { mutableStateOf("") }
+    var convertFile by remember { mutableStateOf<File?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         for (u in uris) {
@@ -109,6 +110,22 @@ fun SpectrumScreen(initial: List<SpecItem>) {
                         if (err != null) Text("⚠ $err", color = Color(0xFFE74C3C), fontSize = 13.sp)
                         if (r != null) {
                             Text(r.verdict, color = levelColor(r.level), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(vertical = 4.dp))
+                            // FLAC «falso» (viene de un MP3): se recomienda pasarlo a MP3 320 y cuánto espacio se ahorra
+                            val ff = it.uri.path?.let { p -> File(p) }
+                            if (it.lossless && r.level == 2 && r.verdict.startsWith("Dice ser") && ff != null && ff.isFile) {
+                                val durSec = (MetaCache.get(ff).durMs / 1000.0).takeIf { d -> d > 0 } ?: r.seconds.toDouble()
+                                val saveMb = ((ff.length() - durSec * 320_000 / 8) / 1048576.0).coerceAtLeast(0.0)
+                                Card(Modifier.fillMaxWidth().padding(vertical = 6.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF39C12).copy(alpha = 0.15f))) {
+                                    Column(Modifier.padding(10.dp)) {
+                                        Text("Recomendación", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(
+                                            "Este FLAC no tiene más calidad que un MP3. Convertirlo a MP3 320 kbps sonaría igual y ahorraría unos ${"%.0f".format(saveMb)} MB.",
+                                            fontSize = 12.sp
+                                        )
+                                        TextButton(onClick = { convertFile = ff }) { Text("Convertir a MP3…") }
+                                    }
+                                }
+                            }
                             Text(
                                 "${"%g".format(r.sampleRate / 1000f)} kHz · corte ≈ ${"%.1f".format(r.cutoffHz / 1000f)} kHz de ${"%.1f".format(r.nyquist / 1000f)} · " +
                                     "pico ${"%.1f".format(r.peakDb)} dB · RMS ${"%.1f".format(r.rmsDb)} dB",
@@ -148,6 +165,7 @@ fun SpectrumScreen(initial: List<SpecItem>) {
             Spacer(Modifier.height(20.dp))
         }
     }
+    convertFile?.let { f -> ConvertDialog(listOf(f)) { convertFile = null } }
 }
 
 // ------------------------------------------------------------------ YouTube → MP3
@@ -328,6 +346,10 @@ fun SettingsScreen() {
                 for (s in listOf(600, 1000, 1200, 2000)) FilterChip(selected = Store.coverMax == s, onClick = { Store.coverMax = s; Store.save() }, label = { Text("$s px") })
             }
 
+            Text("☕ Apoyar", Modifier.padding(top = 20.dp), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("Music Manager es gratis y sin anuncios. Si te sirve, puedes invitarme un café.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            KofiButton(Modifier.padding(top = 6.dp))
+
             Text("ℹ Acerca de", Modifier.padding(top = 20.dp), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
@@ -344,7 +366,7 @@ fun SettingsScreen() {
                         }
                     }
                 }) { Text("Buscar actualización") }
-                OutlinedButton(onClick = { about = true }) { Text("Acerca de") }
+                OutlinedButton(onClick = { Nav.push(Screen.About) }) { Text("Acerca de") }
             }
             info?.let { Text(it, Modifier.padding(top = 8.dp), fontSize = 13.sp) }
             updUrl?.let { u -> Button(onClick = { openUrl(ctx, u) }, modifier = Modifier.padding(top = 6.dp)) { Text("⬇ Descargar") } }
